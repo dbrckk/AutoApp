@@ -1,0 +1,6 @@
+{
+  "name": "Forge: AI App Builder",
+  "description": "An interactive AI agent that generates cross-platform mobile and web applications, simulating complete source code, generating image assets inline, and keeping a robust version history you can export to a ZIP.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
