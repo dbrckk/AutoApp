@@ -1,4 +1,5 @@
-import type { GenerateInput, ProjectScore, VirtualFile } from "../engine/types";
+import type { GenerateInput, ProjectScore } from "../engine/types";
+import { compactProjectContext } from "../engine/projectContext";
 
 export function buildCoderPrompt(params: {
   input: GenerateInput;
@@ -7,6 +8,7 @@ export function buildCoderPrompt(params: {
   score?: ProjectScore;
 }) {
   const { input, plan, review, score } = params;
+  const projectContext = compactProjectContext(input.currentFiles || []);
 
   const filesContext =
     input.currentFiles?.length > 0
@@ -43,6 +45,9 @@ ${JSON.stringify(review || {}, null, 2)}
 
 CURRENT SCORE:
 ${JSON.stringify(score || {}, null, 2)}
+
+PROJECT CONTEXT:
+${projectContext}
 
 CURRENT FILES:
 ${filesContext}
@@ -114,4 +119,4 @@ function isIgnored(path: string) {
     path.endsWith("yarn.lock") ||
     path.endsWith("pnpm-lock.yaml")
   );
-               }
+}
