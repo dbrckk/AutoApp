@@ -6,7 +6,7 @@ import { applyDependencyResolution } from "../intelligence/dependencyResolver";
 import { runRealBuild } from "../sandbox/realBuildRunner";
 import { virtualBuildCheck } from "../sandbox/virtualBuild";
 import { mergeFiles } from "./fileMerge";
-import { parseAiJson } from "./json";
+import { ensureArray, ensureString, parseAiJson } from "./json";
 import { scoreProject } from "./scoring";
 import type {
   AiCaller,
@@ -17,9 +17,9 @@ import type {
 } from "./types";
 
 type AiFileResponse = {
-  files?: VirtualFile[];
-  changelog?: string;
-  estimatedTimeSaved?: string;
+  files?: unknown;
+  changelog?: unknown;
+  estimatedTimeSaved?: unknown;
 };
 
 const MAX_REPAIR_ATTEMPTS = 5;
@@ -30,7 +30,6 @@ export async function orchestrateGeneration(
 ): Promise<GenerateOutput> {
   const mode = input.currentFiles?.length ? "improve" : "create";
   const buildMode = input.buildMode || "virtual";
-
   const safeCurrentFiles = sanitizeFiles(input.currentFiles || []);
 
   const plan = await safeJsonCall<any>(
@@ -82,14 +81,25 @@ export async function orchestrateGeneration(
     }
   );
 
-  let generatedFiles = normalizeGeneratedFiles(generated.files || []);
-  let mergedFiles = mergeFiles(safeCurrentFiles, generatedFiles);
+  const generatedFiles = normalizeGeneratedFiles(generated.files);
 
+  let mergedFiles = mergeFiles(safeCurrentFiles, generatedFiles);
   mergedFiles = applyDependencyResolution(mergedFiles);
 
-  let finalChangedFiles = mergeFiles(generatedFiles, getPackageJsonPatch(mergedFiles));
-  let changelog = generated.changelog || "Project generated or improved.";
-  let estimatedTimeSaved = generated.estimatedTimeSaved || "Several hours saved.";
+  let finalChangedFiles = mergeFiles(
+    generatedFiles,
+    getPackageJsonPatch(mergedFiles)
+  );
+
+  let changelog = ensureString(
+    generated.changelog,
+    "Project generated or improved."
+  );
+
+  const estimatedTimeSaved = ensureString(
+    generated.estimatedTimeSaved,
+    "Several hours saved."
+  );
 
   let buildResult = await runBuildCheck(mergedFiles, buildMode);
 
@@ -109,7 +119,7 @@ export async function orchestrateGeneration(
         }
       );
 
-      const fixedFiles = normalizeGeneratedFiles(fixed.files || []);
+      const fixedFiles = normalizeGeneratedFiles(fixed.files);
 
       if (fixedFiles.length === 0) {
         changelog += `\nRepair ${attempt}: no valid file patch returned.`;
@@ -120,9 +130,15 @@ export async function orchestrateGeneration(
       mergedFiles = applyDependencyResolution(mergedFiles);
 
       finalChangedFiles = mergeFiles(finalChangedFiles, fixedFiles);
-      finalChangedFiles = mergeFiles(finalChangedFiles, getPackageJsonPatch(mergedFiles));
+      finalChangedFiles = mergeFiles(
+        finalChangedFiles,
+        getPackageJsonPatch(mergedFiles)
+      );
 
-      changelog += `\nRepair ${attempt}: ${fixed.changelog || "Build issues repaired."}`;
+      changelog += `\nRepair ${attempt}: ${ensureString(
+        fixed.changelog,
+        "Build issues repaired."
+      )}`;
 
       buildResult = await runBuildCheck(mergedFiles, buildMode);
 
@@ -190,14 +206,14 @@ function sanitizeFiles(files: VirtualFile[]) {
     .filter((file) => !isIgnoredFile(file.path));
 }
 
-function normalizeGeneratedFiles(files: VirtualFile[]) {
+function normalizeGeneratedFiles(files: unknown) {
   const seen = new Set<string>();
 
-  return files
+  return ensureArray<any>(files)
     .filter((file) => file?.path)
     .map((file) => ({
-      path: normalizePath(file.path),
-      content: file.content === null ? null : String(file.content || ""),
+      path: normalizePath(ensureString(file.path)),
+      content: file.content === null ? null : ensureString(file.content),
     }))
     .filter((file) => {
       if (isIgnoredFile(file.path)) return false;
@@ -253,7 +269,9 @@ function buildNextActions(
   }
 
   if (score.accessibility < 80) {
-    actions.push("Improve ARIA, contrast, keyboard navigation and semantic HTML.");
+    actions.push(
+      "Improve ARIA, contrast, keyboard navigation and semantic HTML."
+    );
   }
 
   if (score.reliability < 80) {
@@ -261,11 +279,15 @@ function buildNextActions(
   }
 
   if (score.monetization < 70) {
-    actions.push("Add monetization layer: pricing, checkout, affiliate or lead capture.");
+    actions.push(
+      "Add monetization layer: pricing, checkout, affiliate or lead capture."
+    );
   }
 
   if (actions.length === 0) {
-    actions.push("Project is close to publish-ready. Focus on final polish and deployment.");
+    actions.push(
+      "Project is close to publish-ready. Focus on final polish and deployment."
+    );
   }
 
   return actions;
@@ -286,4 +308,4 @@ function formatChangelog(params: {
     "Next actions:",
     ...params.nextActions.map((action) => `- ${action}`),
   ].join("\n");
-    }
+      }
