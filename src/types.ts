@@ -26,3 +26,25 @@ export interface GenerationResponse {
   changelog: string;
   estimatedTimeSaved: string;
 }
+
+export interface ProjectScore {
+  ui: number;
+  mobile: number;
+  performance: number;
+  accessibility: number;
+  seo: number;
+  maintainability: number;
+  architecture: number;
+  monetization: number;
+  reliability: number;
+  total: number;
+}
+
+export interface GenerationResponse {
+  files: VirtualFile[];
+  changelog: string;
+  estimatedTimeSaved: string;
+  score?: ProjectScore;
+  nextActions?: string[];
+  mode?: "create" | "improve" | "repair";
+}
