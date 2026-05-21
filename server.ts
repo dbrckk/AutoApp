@@ -1,15 +1,20 @@
+// src/server.ts
+
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import {
-  GoogleGenAI,
-  HarmBlockThreshold,
-  HarmCategory,
-} from "@google/genai";
+import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from "@google/genai";
 import OpenAI from "openai";
 
 import { orchestrateGeneration } from "./src/core/engine/orchestration";
+import {
+  cleanupOldJobs,
+  createJob,
+  getJob,
+  pushJobLog,
+  updateJob,
+} from "./src/core/engine/jobStore";
 import type { AiCaller } from "./src/core/engine/types";
 
 dotenv.config();
@@ -17,8 +22,8 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
-app.use(express.json({ limit: "75mb" }));
-app.use(express.urlencoded({ limit: "75mb", extended: true }));
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
 const gemini = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
@@ -175,7 +180,7 @@ function cleanFiles(files: any[]) {
   if (!Array.isArray(files)) return [];
 
   let totalChars = 0;
-  const MAX_CONTEXT_CHARS = 500_000;
+  const MAX_CONTEXT_CHARS = 650_000;
 
   return files
     .filter((file) => {
@@ -207,7 +212,7 @@ function cleanFiles(files: any[]) {
         filePath.endsWith(".wav") ||
         filePath.endsWith(".zip");
 
-      const isLarge = content.length > 60_000 || isBinaryLike;
+      const isLarge = content.length > 80_000 || isBinaryLike;
 
       if (isLarge) {
         return {
@@ -236,19 +241,13 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     name: "Forge AI App Builder",
-    version: "2.1-real-build-runner",
+    version: "3.0-final-orchestrated-builder",
   });
 });
 
 app.post("/api/generate", async (req, res) => {
   try {
-    const {
-      prompt,
-      currentFiles,
-      isAutoImprove,
-      aiConfig,
-      buildMode,
-    } = req.body;
+    const { prompt, currentFiles, isAutoImprove, aiConfig, buildMode } = req.body;
 
     if (!prompt || typeof prompt !== "string") {
       return res.status(400).json({
@@ -284,6 +283,83 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
+app.post("/api/generate-job", async (req, res) => {
+  const job = createJob();
+
+  res.json({
+    ok: true,
+    jobId: job.id,
+  });
+
+  queueMicrotask(async () => {
+    try {
+      cleanupOldJobs();
+
+      const { prompt, currentFiles, isAutoImprove, aiConfig, buildMode } = req.body;
+
+      updateJob(job.id, {
+        status: "running",
+      });
+
+      pushJobLog(job.id, "Generation started.");
+
+      if (!prompt || typeof prompt !== "string") {
+        throw new Error("Missing required field: prompt");
+      }
+
+      const cleanedFiles = cleanFiles(currentFiles);
+      const callAi = createAiCaller(aiConfig);
+
+      pushJobLog(job.id, "Calling orchestrator.");
+
+      const output = await orchestrateGeneration(
+        {
+          prompt,
+          currentFiles: cleanedFiles,
+          isAutoImprove: Boolean(isAutoImprove),
+          aiConfig,
+          buildMode: buildMode || "virtual",
+        },
+        async (promptText: string) => {
+          pushJobLog(job.id, "Calling AI provider.");
+          const result = await callAi(promptText);
+          pushJobLog(job.id, "AI provider responded.");
+          return result;
+        }
+      );
+
+      updateJob(job.id, {
+        status: "success",
+        result: output,
+      });
+
+      pushJobLog(job.id, "Generation completed.");
+    } catch (error: any) {
+      updateJob(job.id, {
+        status: "error",
+        error: error?.message || "Generation job failed.",
+      });
+
+      pushJobLog(job.id, error?.message || "Generation job failed.");
+    }
+  });
+});
+
+app.get("/api/jobs/:id", (req, res) => {
+  const job = getJob(req.params.id);
+
+  if (!job) {
+    return res.status(404).json({
+      error: "Job not found",
+    });
+  }
+
+  res.json({
+    ok: true,
+    job,
+  });
+});
+
 app.post("/api/build-check", async (req, res) => {
   try {
     const { files, mode } = req.body;
@@ -297,19 +373,14 @@ app.post("/api/build-check", async (req, res) => {
     const cleanedFiles = cleanFiles(files);
 
     if (mode === "real") {
-      const { runRealBuild } = await import(
-        "./src/core/sandbox/realBuildRunner"
-      );
-
+      const { runRealBuild } = await import("./src/core/sandbox/realBuildRunner");
       const result = await runRealBuild(cleanedFiles);
       return res.json(result);
     }
 
-    const { virtualBuildCheck } = await import(
-      "./src/core/sandbox/virtualBuild"
-    );
-
+    const { virtualBuildCheck } = await import("./src/core/sandbox/virtualBuild");
     const result = virtualBuildCheck(cleanedFiles);
+
     return res.json(result);
   } catch (error: any) {
     console.error("[/api/build-check] Error:", error);
@@ -350,6 +421,220 @@ app.post("/api/score", async (req, res) => {
   }
 });
 
+app.post("/api/inspect", async (req, res) => {
+  try {
+    const { files } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const { inspectProject } = await import("./src/core/intelligence/projectInspector");
+    const inspection = inspectProject(cleanFiles(files));
+
+    res.json({
+      ok: true,
+      inspection,
+    });
+  } catch (error: any) {
+    console.error("[/api/inspect] Error:", error);
+
+    res.status(500).json({
+      error: error?.message || "Inspection failed",
+    });
+  }
+});
+
+app.post("/api/dependencies/resolve", async (req, res) => {
+  try {
+    const { files, apply } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const { resolveProjectDependencies, applyDependencyResolution } =
+      await import("./src/core/intelligence/dependencyResolver");
+
+    const cleanedFiles = cleanFiles(files);
+    const resolution = resolveProjectDependencies(cleanedFiles);
+
+    res.json({
+      ok: true,
+      resolution,
+      files: apply ? applyDependencyResolution(cleanedFiles) : undefined,
+    });
+  } catch (error: any) {
+    console.error("[/api/dependencies/resolve] Error:", error);
+
+    res.status(500).json({
+      error: error?.message || "Dependency resolution failed",
+    });
+  }
+});
+
+app.post("/api/deployment/pack", async (req, res) => {
+  try {
+    const { files } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const { createDeploymentPack } = await import(
+      "./src/core/intelligence/deploymentPack"
+    );
+
+    const additions = createDeploymentPack(cleanFiles(files));
+
+    res.json({
+      ok: true,
+      files: additions,
+      count: additions.length,
+    });
+  } catch (error: any) {
+    console.error("[/api/deployment/pack] Error:", error);
+
+    res.status(500).json({
+      error: error?.message || "Deployment pack failed",
+    });
+  }
+});
+
+app.post("/api/publish/report", async (req, res) => {
+  try {
+    const { files } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const { createPublishReport } = await import(
+      "./src/core/intelligence/publishAssistant"
+    );
+
+    const report = createPublishReport(cleanFiles(files));
+
+    res.json({
+      ok: true,
+      report,
+    });
+  } catch (error: any) {
+    console.error("[/api/publish/report] Error:", error);
+
+    res.status(500).json({
+      error: error?.message || "Publish report failed",
+    });
+  }
+});
+
+app.get("/api/templates", async (_req, res) => {
+  try {
+    const { listProjectTemplates } = await import(
+      "./src/core/intelligence/templates"
+    );
+
+    res.json({
+      ok: true,
+      templates: listProjectTemplates(),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error?.message || "Template listing failed",
+    });
+  }
+});
+
+app.post("/api/templates/apply", async (req, res) => {
+  try {
+    const { id } = req.body;
+
+    const { getProjectTemplate } = await import(
+      "./src/core/intelligence/templates"
+    );
+
+    const template = getProjectTemplate(id);
+
+    if (!template) {
+      return res.status(404).json({
+        error: "Template not found",
+      });
+    }
+
+    res.json({
+      ok: true,
+      template,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error?.message || "Template apply failed",
+    });
+  }
+});
+
+app.post("/api/preview/start", async (req, res) => {
+  try {
+    const { files } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const { startPreviewSession } = await import(
+      "./src/core/sandbox/previewStore"
+    );
+
+    const session = await startPreviewSession(cleanFiles(files));
+
+    res.json({
+      ok: true,
+      session,
+    });
+  } catch (error: any) {
+    console.error("[/api/preview/start] Error:", error);
+
+    res.status(500).json({
+      error: error?.message || "Preview start failed",
+    });
+  }
+});
+
+app.get("/api/preview/:id", async (req, res) => {
+  const { getPreviewSession } = await import("./src/core/sandbox/previewStore");
+  const session = getPreviewSession(req.params.id);
+
+  if (!session) {
+    return res.status(404).json({
+      error: "Preview session not found",
+    });
+  }
+
+  res.json({
+    ok: true,
+    session,
+  });
+});
+
+app.post("/api/preview/:id/stop", async (req, res) => {
+  const { stopPreviewSession } = await import("./src/core/sandbox/previewStore");
+  const session = await stopPreviewSession(req.params.id);
+
+  res.json({
+    ok: true,
+    session,
+  });
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -374,7 +659,7 @@ async function startServer() {
     console.log(`Forge server running on http://localhost:${PORT}`);
   });
 
-  server.setTimeout(600_000);
+  server.setTimeout(900_000);
 }
 
 startServer();
