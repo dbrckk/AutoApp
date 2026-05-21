@@ -8,6 +8,7 @@ import {
   HarmCategory,
 } from "@google/genai";
 import OpenAI from "openai";
+
 import { orchestrateGeneration } from "./src/core/engine/orchestration";
 import type { AiCaller } from "./src/core/engine/types";
 
@@ -152,7 +153,8 @@ function createAiCaller(aiConfig: any): AiCaller {
           status === 429 ||
           status >= 500 ||
           message.includes("429") ||
-          message.toLowerCase().includes("rate limit")
+          message.toLowerCase().includes("rate limit") ||
+          message.toLowerCase().includes("temporarily unavailable")
         ) {
           continue;
         }
@@ -178,24 +180,34 @@ function cleanFiles(files: any[]) {
   return files
     .filter((file) => {
       const pathValue = String(file?.path || "");
+
       return (
         pathValue &&
         !pathValue.endsWith("package-lock.json") &&
         !pathValue.endsWith("yarn.lock") &&
-        !pathValue.endsWith("pnpm-lock.yaml")
+        !pathValue.endsWith("pnpm-lock.yaml") &&
+        !pathValue.includes("node_modules") &&
+        !pathValue.includes(".git/")
       );
     })
     .map((file) => {
       const filePath = String(file.path || "");
       const content = String(file.content || "");
 
-      const isLarge =
-        content.length > 60_000 ||
+      const isBinaryLike =
         filePath.endsWith(".svg") ||
         filePath.endsWith(".png") ||
         filePath.endsWith(".jpg") ||
         filePath.endsWith(".jpeg") ||
-        filePath.endsWith(".webp");
+        filePath.endsWith(".webp") ||
+        filePath.endsWith(".gif") ||
+        filePath.endsWith(".ico") ||
+        filePath.endsWith(".mp4") ||
+        filePath.endsWith(".mp3") ||
+        filePath.endsWith(".wav") ||
+        filePath.endsWith(".zip");
+
+      const isLarge = content.length > 60_000 || isBinaryLike;
 
       if (isLarge) {
         return {
@@ -224,13 +236,19 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     name: "Forge AI App Builder",
-    version: "2.0-orchestrated",
+    version: "2.1-real-build-runner",
   });
 });
 
 app.post("/api/generate", async (req, res) => {
   try {
-    const { prompt, currentFiles, isAutoImprove, aiConfig } = req.body;
+    const {
+      prompt,
+      currentFiles,
+      isAutoImprove,
+      aiConfig,
+      buildMode,
+    } = req.body;
 
     if (!prompt || typeof prompt !== "string") {
       return res.status(400).json({
@@ -247,6 +265,7 @@ app.post("/api/generate", async (req, res) => {
         currentFiles: cleanedFiles,
         isAutoImprove: Boolean(isAutoImprove),
         aiConfig,
+        buildMode: buildMode || "virtual",
       },
       callAi
     );
@@ -265,6 +284,72 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
+app.post("/api/build-check", async (req, res) => {
+  try {
+    const { files, mode } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const cleanedFiles = cleanFiles(files);
+
+    if (mode === "real") {
+      const { runRealBuild } = await import(
+        "./src/core/sandbox/realBuildRunner"
+      );
+
+      const result = await runRealBuild(cleanedFiles);
+      return res.json(result);
+    }
+
+    const { virtualBuildCheck } = await import(
+      "./src/core/sandbox/virtualBuild"
+    );
+
+    const result = virtualBuildCheck(cleanedFiles);
+    return res.json(result);
+  } catch (error: any) {
+    console.error("[/api/build-check] Error:", error);
+
+    res.status(500).json({
+      error: error?.message || "Build check failed",
+      details:
+        process.env.NODE_ENV === "production"
+          ? undefined
+          : String(error?.stack || error),
+    });
+  }
+});
+
+app.post("/api/score", async (req, res) => {
+  try {
+    const { files } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const { scoreProject } = await import("./src/core/engine/scoring");
+    const score = scoreProject(cleanFiles(files));
+
+    res.json({
+      ok: true,
+      score,
+    });
+  } catch (error: any) {
+    console.error("[/api/score] Error:", error);
+
+    res.status(500).json({
+      error: error?.message || "Score failed",
+    });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -277,6 +362,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+
     app.use(express.static(distPath));
 
     app.get("*", (_req, res) => {
