@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, Loader2, Send, Wand2, Play, Plus, Clock, Terminal, X, Code2, Smartphone, LayoutTemplate, Trash2, Menu, Settings } from 'lucide-react';
+import { Download, Loader2, Send, Wand2, Play, Plus, Clock, Terminal, X, Code2, Smartphone, LayoutTemplate, Trash2, Menu, Settings, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { FileTree } from './components/FileTree';
@@ -189,11 +189,12 @@ export default function App() {
     // If auto-generating from scratch with no prompt, pick a cool app idea
     if (!finalPrompt && startAutoImprove && commits.length === 0) {
       const ideas = [
-        "Build a multi-tenant Enterprise SaaS CRM dashboard with incredible depth. Include animated financial data grids with D3.js/Recharts, complex multi-step user onboarding flows, a fully functioning rich-text email template editor, deep relational state management, and a stunning dark-glassmorphism neon-accented UI.",
-        "Build a completely immersive, next-generation Music and DJ production studio app in the browser. Include real-time Web Audio API synthesizers, interactive timeline mixing boards, beautifully animated dynamic frequency analyzers, and an ultra-premium futuristic studio interface.",
-        "Build a world-class Web3 / Crypto Portfolio tracker OS. Implement live mock WebSockets for fake ticker data flowing constantly, super-complex candlestuck financial charts, a full-screen trading terminal view with draggable widget windows, and razor-sharp minimalist brutalist design.",
-        "Build a full-blown collaborative canvas whiteboarding app. Include infinite panning, a suite of vector drawing tools (simulated with HTML5 Canvas or SVG), real-time mock collaboration cursors flying around, an extensive tools palette, and breathtaking micro-interactions using Framer Motion.",
-        "Generate a hyper-advanced 3D-feeling Space Exploration Encyclopedia. Use incredible parallax scrolling, deeply nested route hierarchies for galaxies/planets, complex physical data simulations, interactive orbital paths, and awe-inspiring, jaw-dropping high-contrast cinematic web design."
+        "Build a massive, hyper-complex Enterprise SaaS Global Dashboard. Include real-time animated data grids (simulated) using D3.js/Recharts, deeply nested multi-step onboarding, beautiful Framer Motion page transitions, massive nested routing, deep Context/Zustand state management, a rich-text template editor, and a stunning dark-glassmorphism neon-accented UI. Leave nothing to the imagination.",
+        "Build a completely immersive, next-generation Music DAWs and DJ production studio in the browser. Include real-time Web Audio API synthesizers, complex interactive timeline mixing boards, beautifully animated dynamic frequency analyzers, drag-and-drop tracks, and an ultra-premium futuristic dark-mode studio interface. Over-engineer everything. Fully automatic mode.",
+        "Build a world-class Web3 / Crypto Portfolio tracker OS at a $100B startup scale. Implement live mock WebSockets for fake ticker data flowing constantly, hyper-complex candlestick financial charts, a full-screen trading terminal view with draggable/resizable widget windows, multi-wallet sync simulation, and razor-sharp minimalist brutalist dark design. Build it entirely autonomously.",
+        "Build a full-blown collaborative canvas whiteboarding app like Miro/Figma. Include infinite panning, a massive suite of vector drawing tools (simulated with HTML5 Canvas or SVG), real-time mock collaboration cursors flying around, an extensive tools palette, layered object management, undo/redo history, and breathtaking fluid micro-interactions. Max out the features.",
+        "Generate a hyper-advanced 3D-feeling Space Exploration Encyclopedia. Use incredible parallax scrolling, deeply nested route hierarchies for galaxies/planets, complex physical data simulations, interactive orbital paths, 3D CSS transforms, and awe-inspiring, jaw-dropping high-contrast cinematic web design. Make it massive. Full automatique mode.",
+        "Generate an absolute god-tier AI-powered Operating System interface in React. A full simulated desktop with draggable windows, complex file system navigation, interactive terminal emulator connected to an AI agent, beautiful glassmorphic taskbar, layered z-indexing for active windows, and breathtaking animations. Implement it completely and thoroughly."
       ];
       finalPrompt = ideas[Math.floor(Math.random() * ideas.length)];
       setCurrentPrompt(finalPrompt);
@@ -225,7 +226,9 @@ export default function App() {
 
     try {
       let isPerfect = false;
-      let loopPrompt = finalPrompt || 'CRITICAL: AUTONOMOUS FORGE MODE ACTIVE. Analyze the current build and autonomously design and implement the next massive wave of features and visual polish. Do not wait for user input.';
+      let loopPrompt = (startAutoImprove && finalPrompt) 
+        ? `CRITICAL: THE USER REQUEST IS: "${finalPrompt}". YOU MUST BUILD THIS IN FULL AUTOMATIQUE GOD-MODE. Over-engineer this to the absolute max. Deliver an impossibly massive, visually stunning masterpiece.`
+        : finalPrompt || 'CRITICAL: AUTONOMOUS FORGE GOD-MODE ACTIVE. You must over-engineer the application to an absolute maximum. Add massive new features, extreme visual complexity, deeply nested states, and absolute god-tier CSS/animations. Break existing files into multiple components. Implement $1B startup features automatically. DO NOT wait for confirmation. Deliver an epic masterpiece.';
       let loopFiles = [...currentFiles];
       let runningCommits = [...commits];
 
@@ -279,7 +282,7 @@ export default function App() {
           if ((data.changelog || '').includes('PERFECT_READY_TO_PUBLISH')) {
             isPerfect = true;
           } else {
-            loopPrompt = "CRITICAL: FULL AUTOMATIQUE GOD-MODE ACTIVE. The user wants you to over-engineer this to the absolute max. Improve everything infinitely. Implement the next phase of massive structural, architectural, and breathtaking visual improvements. Build entirely new pages, massively complex dashboards, 3D interactive graphics (simulated), deep global state engines, gorgeous fluid animations, and real-world scale logic. Break components down into hundreds of micro-files if necessary. Do not wait for permission. You are generating a complete $10B startup from scratch. Evolve the app towards absolute god-tier perfection.";
+            loopPrompt = `CRITICAL: FULL AUTOMATIQUE GOD-MODE ACTIVE. The user originally requested: "${finalPrompt}". The user wants you to over-engineer this to the absolute max. Improve everything infinitely. Implement the next phase of massive structural, architectural, and breathtaking visual improvements. Build entirely new pages, massively complex dashboards, 3D interactive graphics (simulated), deep global state engines, gorgeous fluid animations, and real-world scale logic. Break components down into dozens of files if necessary. Do not wait for permission. You are generating a complete $10B startup. Evolve the app towards absolute god-tier perfection.`;
           }
         } else {
           break;
@@ -302,66 +305,75 @@ export default function App() {
   };
 
   const renderWelcomeState = () => (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#1e1e1e] overflow-hidden relative">
-      {/* Intense animated background for welcome state */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-pink-900/10 rounded-full mix-blend-screen filter blur-[120px] animate-pulse-slow"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-indigo-900/10 rounded-full mix-blend-screen filter blur-[120px] animate-pulse"></div>
-        <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-emerald-900/10 rounded-full mix-blend-screen filter blur-[100px] animate-bounce"></div>
+    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#050505] overflow-hidden relative">
+      {/* Intense atmospheric background for welcome state */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none flex items-center justify-center">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPPHBhdGggZD0iTTAgMGg0MHYxbC00MCAuMXpNMCAwdi4xbC4xIDQwSDB6IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')] mix-blend-screen opacity-70"></div>
+        <div className="w-[120%] h-[120%] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-pink-900/20 via-[#050505] to-[#050505] animate-pulse-slow"></div>
+        <div className="absolute w-[800px] h-[800px] bg-[conic-gradient(from_0deg_at_50%_50%,_var(--tw-gradient-stops))] from-transparent via-pink-500/10 to-transparent animate-spin-slow rounded-full mix-blend-screen" style={{ animationDuration: '8s' }} />
+        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-pink-600/20 rounded-full mix-blend-screen filter blur-[150px] animate-pulse-slow"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-indigo-600/20 rounded-full mix-blend-screen filter blur-[150px]" style={{ animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}></div>
       </div>
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-3xl w-full z-10 overflow-y-auto custom-scrollbar pr-4 max-h-[85vh]"
+        initial={{ opacity: 0, scale: 0.9, y: 40 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="max-w-4xl w-full z-10 overflow-y-auto custom-scrollbar pr-2 max-h-[85vh] flex flex-col items-center"
       >
-        <div className="w-24 h-24 bg-gradient-to-br from-pink-500/10 to-indigo-500/10 rounded-3xl flex items-center justify-center mx-auto mb-8 border border-purple-500/30 shadow-2xl shadow-purple-500/20 backdrop-blur-md">
-          <Terminal className="w-12 h-12 text-pink-400 drop-shadow-[0_0_15px_rgba(236,72,153,0.5)]" />
+        <div className="w-32 h-32 bg-gradient-to-tr from-pink-500/20 via-purple-500/20 to-indigo-500/20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 border border-white/10 shadow-[0_0_100px_rgba(236,72,153,0.4)] backdrop-blur-2xl relative group">
+          <div className="absolute inset-0 bg-gradient-to-r from-pink-500/30 to-indigo-500/30 rounded-[2.5rem] blur-2xl group-hover:blur-3xl transition-all opacity-70 animate-pulse"></div>
+          <div className="absolute inset-[2px] bg-[#0a0a0a] rounded-[2.3rem] z-0"></div>
+          <Terminal className="w-16 h-16 text-pink-400 drop-shadow-[0_0_30px_rgba(236,72,153,1)] relative z-10 animate-pulse-slow" />
         </div>
-        <h1 className="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 mb-6 tracking-tight drop-shadow-lg">
-          Forge AI Copilot <sup className="text-sm text-pink-400 font-mono tracking-widest ml-1 bg-pink-500/10 px-2 py-0.5 rounded-full border border-pink-500/20">GOD MODE</sup>
+        <h1 className="text-6xl md:text-8xl font-display font-black bg-clip-text text-transparent bg-gradient-to-b from-white via-gray-200 to-gray-500 mb-8 tracking-tighter drop-shadow-2xl text-center leading-[1.1]">
+          Forge AI <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400">Workspace</span> <sup className="text-sm md:text-lg text-pink-400 font-mono tracking-[0.2em] ml-2 bg-pink-500/10 px-4 py-1.5 rounded-full border border-pink-500/40 uppercase animate-pulse shadow-[0_0_20px_rgba(236,72,153,0.3)] align-top relative -top-8 md:-top-12">God Mode</sup>
         </h1>
-        <p className="text-gray-400 text-lg mb-10 leading-relaxed max-w-xl mx-auto">
-          Describe absolutely anything you want to build. Forge will design the architecture, complex state loops, real-world data simulations, and incredibly gorgeous UI. Or click <strong className="text-pink-400 drop-shadow-[0_0_8px_rgba(236,72,153,0.5)]">Full Automatique God Mode</strong> to unleash autonomous god-mode generation!
+        <p className="text-gray-400 text-xl md:text-2xl mb-14 leading-relaxed max-w-3xl mx-auto font-light text-center drop-shadow-md">
+          Experience the absolute pinnacle of autonomic software generation. Describe your billion-dollar vision, or unleash <strong className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-indigo-400 drop-shadow-[0_0_15px_rgba(236,72,153,0.8)] font-black tracking-wide">FULL AUTOMATIQUE GOD MODE</strong> and watch a production-grade massive masterpiece build itself out of the void.
         </p>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-          <button onClick={() => handleTemplateClick("Build an incredibly advanced, fully-styled Instagram clone in React Native/Expo. Include a gorgeous premium dark theme, massive state management, fluid animations with React Native Reanimated, simulated complex fetching logic, and ultra-polished UI/UX. Leave absolutely nothing to the imagination.")} className="p-4 rounded-xl bg-[#252525] border border-[#333] hover:border-pink-500/50 hover:bg-[#2a2a2a] transition-all group flex items-start space-x-4">
-            <div className="p-3 bg-pink-500/10 rounded-lg group-hover:bg-pink-500/20 transition-colors">
-              <Smartphone className="w-6 h-6 text-pink-400" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full text-left perspective-1000">
+          <button onClick={() => handleTemplateClick("Build an incredibly advanced, fully-styled Instagram clone in React Native/Expo. Include a gorgeous premium dark theme, massive state management, fluid animations with React Native Reanimated, simulated complex fetching logic, and ultra-polished UI/UX. Leave absolutely nothing to the imagination.")} className="p-6 rounded-[1.5rem] bg-[#0a0a0a]/90 backdrop-blur-2xl border border-white/5 hover:border-pink-500/50 hover:bg-[#111] transition-all duration-500 group flex items-start space-x-6 shadow-2xl hover:shadow-[0_0_40px_rgba(236,72,153,0.15)] hover:-translate-y-2 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-pink-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+            <div className="p-4 bg-gradient-to-br from-pink-500/10 to-pink-500/5 rounded-2xl group-hover:bg-pink-500/20 group-hover:scale-110 transition-all duration-500 shadow-[inset_0_0_20px_rgba(236,72,153,0.1)] border border-pink-500/20 relative z-10">
+              <Smartphone className="w-8 h-8 text-pink-400 drop-shadow-[0_0_15px_rgba(236,72,153,0.6)]" />
             </div>
-            <div>
-              <h3 className="text-gray-200 font-semibold mb-1">Premium Social UI</h3>
-              <p className="text-xs text-gray-500">React Native / Expo mock app</p>
-            </div>
-          </button>
-          
-          <button onClick={() => handleTemplateClick("Create an enterprise-grade Agile Kanban Tracker. Must feature extensive multi-layered state, incredibly smooth framer-motion drag-and-drop, completely deep nested routing structures (simulated), interactive dashboards with Recharts, and absolute styling perfection.")} className="p-4 rounded-xl bg-[#252525] border border-[#333] hover:border-indigo-500/50 hover:bg-[#2a2a2a] transition-all group flex items-start space-x-4">
-            <div className="p-3 bg-indigo-500/10 rounded-lg group-hover:bg-indigo-500/20 transition-colors">
-              <LayoutTemplate className="w-6 h-6 text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="text-gray-200 font-semibold mb-1">Enterprise Kanban</h3>
-              <p className="text-xs text-gray-500">Massive React web app task manager</p>
+            <div className="relative z-10 flex-1">
+              <h3 className="text-gray-100 font-extrabold mb-2 text-xl group-hover:text-pink-300 transition-colors tracking-tight">Premium Social UI</h3>
+              <p className="text-[13px] text-gray-500 font-medium leading-relaxed">Native-grade layout synthesis</p>
             </div>
           </button>
           
-          <button onClick={() => handleTemplateClick("Build an extremely complex immersive WebGL or Canvas-based game. Include a fully architected game loop, particle systems, beautiful futuristic neon retro-arcade shaders, multi-level logic, and completely maxed-out visuals.")} className="p-4 rounded-xl bg-[#252525] border border-[#333] hover:border-green-500/50 hover:bg-[#2a2a2a] transition-all group flex items-start space-x-4">
-            <div className="p-3 bg-green-500/10 rounded-lg group-hover:bg-green-500/20 transition-colors">
-              <Play className="w-6 h-6 text-green-400" />
+          <button onClick={() => handleTemplateClick("Create an enterprise-grade Agile Kanban Tracker. Must feature extensive multi-layered state, incredibly smooth framer-motion drag-and-drop, completely deep nested routing structures (simulated), interactive dashboards with Recharts, and absolute styling perfection.")} className="p-6 rounded-[1.5rem] bg-[#0a0a0a]/90 backdrop-blur-2xl border border-white/5 hover:border-indigo-500/50 hover:bg-[#111] transition-all duration-500 group flex items-start space-x-6 shadow-2xl hover:shadow-[0_0_40px_rgba(99,102,241,0.15)] hover:-translate-y-2 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+            <div className="p-4 bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 rounded-2xl group-hover:bg-indigo-500/20 group-hover:scale-110 transition-all duration-500 shadow-[inset_0_0_20px_rgba(99,102,241,0.1)] border border-indigo-500/20 relative z-10">
+              <LayoutTemplate className="w-8 h-8 text-indigo-400 drop-shadow-[0_0_15px_rgba(99,102,241,0.6)]" />
             </div>
-            <div>
-              <h3 className="text-gray-200 font-semibold mb-1">Advanced Game Engine</h3>
-              <p className="text-xs text-gray-500">HTML5 Canvas / React Game</p>
+            <div className="relative z-10 flex-1">
+              <h3 className="text-gray-100 font-extrabold mb-2 text-xl group-hover:text-indigo-300 transition-colors tracking-tight">Enterprise Kanban</h3>
+              <p className="text-[13px] text-gray-500 font-medium leading-relaxed">Massive state orchestration</p>
             </div>
           </button>
           
-          <button onClick={() => handleTemplateClick("Generate a god-tier Developer OS/Desktop interface in the browser. It should simulate a full operating system with draggable windows, a start menu, a working terminal emulation, file system architecture, and immaculate glassmorphism aesthetics.")} className="p-4 rounded-xl bg-[#252525] border border-[#333] hover:border-purple-500/50 hover:bg-[#2a2a2a] transition-all group flex items-start space-x-4">
-            <div className="p-3 bg-purple-500/10 rounded-lg group-hover:bg-purple-500/20 transition-colors">
-              <Code2 className="w-6 h-6 text-purple-400" />
+          <button onClick={() => handleTemplateClick("Build an extremely complex immersive WebGL or Canvas-based game. Include a fully architected game loop, particle systems, beautiful futuristic neon retro-arcade shaders, multi-level logic, and completely maxed-out visuals.")} className="p-6 rounded-[1.5rem] bg-[#0a0a0a]/90 backdrop-blur-2xl border border-white/5 hover:border-emerald-500/50 hover:bg-[#111] transition-all duration-500 group flex items-start space-x-6 shadow-2xl hover:shadow-[0_0_40px_rgba(16,185,129,0.15)] hover:-translate-y-2 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+            <div className="p-4 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 rounded-2xl group-hover:bg-emerald-500/20 group-hover:scale-110 transition-all duration-500 shadow-[inset_0_0_20px_rgba(16,185,129,0.1)] border border-emerald-500/20 relative z-10">
+              <Play className="w-8 h-8 text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.6)] ml-1" />
             </div>
-            <div>
-              <h3 className="text-gray-200 font-semibold mb-1">Web OS Experience</h3>
-              <p className="text-xs text-gray-500">React Desktop Environment</p>
+            <div className="relative z-10 flex-1">
+              <h3 className="text-gray-100 font-extrabold mb-2 text-xl group-hover:text-emerald-300 transition-colors tracking-tight">Advanced Game Engine</h3>
+              <p className="text-[13px] text-gray-500 font-medium leading-relaxed">HTML5 Canvas render topology</p>
+            </div>
+          </button>
+          
+          <button onClick={() => handleTemplateClick("Generate a god-tier Developer OS/Desktop interface in the browser. It windowing system with draggable windows, a start menu, a working terminal emulation, file system architecture, and immaculate glassmorphism aesthetics.")} className="p-6 rounded-[1.5rem] bg-[#0a0a0a]/90 backdrop-blur-2xl border border-white/5 hover:border-purple-500/50 hover:bg-[#111] transition-all duration-500 group flex items-start space-x-6 shadow-2xl hover:shadow-[0_0_40px_rgba(168,85,247,0.15)] hover:-translate-y-2 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+            <div className="p-4 bg-gradient-to-br from-purple-500/10 to-purple-500/5 rounded-2xl group-hover:bg-purple-500/20 group-hover:scale-110 transition-all duration-500 shadow-[inset_0_0_20px_rgba(168,85,247,0.1)] border border-purple-500/20 relative z-10">
+              <Code2 className="w-8 h-8 text-purple-400 drop-shadow-[0_0_15px_rgba(168,85,247,0.6)]" />
+            </div>
+            <div className="relative z-10 flex-1">
+              <h3 className="text-gray-100 font-extrabold mb-2 text-xl group-hover:text-purple-300 transition-colors tracking-tight">Web OS Architecture</h3>
+              <p className="text-[13px] text-gray-500 font-medium leading-relaxed">Desktop hyper-simulation</p>
             </div>
           </button>
         </div>
@@ -392,20 +404,22 @@ export default function App() {
       )}
 
       {/* Sidebar - Files & History */}
-      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative flex flex-col w-72 md:w-72 border-r border-[#222] bg-[#0a0a0a]/90 backdrop-blur-xl z-40 h-full md:h-full top-0 md:top-0 left-0 pt-12 md:pt-0 transition-transform duration-300 ease-in-out`}>
-        <div className="hidden md:flex flex-col border-b border-[#222] bg-[#0a0a0a]/80 backdrop-blur-md shrink-0 relative z-10">
-          <div className="h-12 flex items-center px-4 font-bold text-white tracking-widest text-[13px] bg-gradient-to-r from-transparent to-[#111]">
-            <Terminal className="w-5 h-5 mr-3 text-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.8)]" />
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-indigo-400">FORGE SYSTEM</span>
+      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative flex flex-col w-72 md:w-80 border-r border-[#222] bg-[#0a0a0a]/95 backdrop-blur-3xl z-40 h-full md:h-full top-0 md:top-0 left-0 pt-12 md:pt-0 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
+        <div className="hidden md:flex flex-col border-b border-[#222] bg-[#111]/80 backdrop-blur-md shrink-0 relative z-10">
+          <div className="h-14 flex items-center px-5 font-black text-white tracking-[0.2em] text-sm bg-gradient-to-b from-[#151515] to-transparent font-display shadow-inner">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-pink-500/20 to-indigo-500/20 flex items-center justify-center mr-3 border border-pink-500/30 shadow-[inset_0_0_10px_rgba(236,72,153,0.2)] pb-0.5">
+              <Terminal className="w-4 h-4 text-pink-400" />
+            </div>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">FORGE SYSTEM</span>
           </div>
-          <div className="px-3 pb-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Projects</span>
-              <button onClick={handleCreateProject} className="text-pink-400 hover:text-pink-300 transition-colors p-1" title="New Project">
-                <Plus className="w-4 h-4" />
+          <div className="px-5 pb-5 pt-3">
+            <div className="flex items-center justify-between mb-3 text-white/50">
+              <span className="text-[9px] font-black uppercase tracking-[0.2em]">Workspaces</span>
+              <button onClick={handleCreateProject} className="text-pink-400 hover:text-white transition-all bg-pink-500/10 hover:bg-pink-500/30 p-1.5 rounded-md border border-pink-500/20 hover:shadow-[0_0_10px_rgba(236,72,153,0.3)]" title="New Project">
+                <Plus className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="relative">
+            <div className="relative group/select">
               <select 
                 value={currentProjectId || ''} 
                 onChange={(e) => {
@@ -414,25 +428,25 @@ export default function App() {
                   setSelectedFilePath(null);
                   setCurrentPrompt('');
                 }}
-                className="w-full bg-[#252525] border border-[#333] rounded-md text-sm text-gray-200 py-1.5 pl-2 pr-8 appearance-none focus:outline-none focus:border-pink-500"
+                className="w-full bg-[#050505] border border-[#333] group-hover/select:border-pink-500/50 rounded-xl text-sm text-gray-200 py-2.5 pl-4 pr-10 appearance-none focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500/50 transition-all shadow-inner font-medium truncate cursor-pointer"
               >
                 {projects.length === 0 ? (
-                  <option value="" disabled>No projects</option>
+                  <option value="" disabled>No projects yet...</option>
                 ) : (
                   projects.map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))
                 )}
               </select>
-              <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                <Menu className="w-3 h-3 text-gray-500" />
+              <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
+                <ChevronDown className="w-4 h-4 text-gray-500 group-hover/select:text-pink-400 transition-colors" />
               </div>
             </div>
           </div>
         </div>
         
         <div className="flex-1 overflow-hidden flex flex-col bg-transparent relative z-10">
-          <div className="px-4 py-2.5 font-bold text-[10px] tracking-widest text-pink-500/80 uppercase border-b border-[#222] bg-[#0f0f0f] flex justify-between items-center shadow-inner">
+          <div className="px-5 py-3 font-bold text-[10px] tracking-[0.2em] text-pink-500/80 uppercase border-b border-[#222] bg-[#050505]/80 flex justify-between items-center shadow-inner">
             <span>Explorer</span>
             {currentProjectId && (
               <div className="flex items-center space-x-2">
@@ -453,25 +467,33 @@ export default function App() {
         </div>
         
         {/* Version History Area */}
-        <div className="h-[45%] flex flex-col border-t border-[#222] bg-gradient-to-b from-[#0a0a0a] to-[#050505] relative z-10 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-          <div className="px-4 py-2.5 font-bold text-[10px] tracking-widest text-indigo-400/80 uppercase border-b border-[#222] flex justify-between items-center bg-[#0a0a0a]">
-            <span>Timeline</span>
+        <div className="h-[45%] flex flex-col border-t border-white/5 bg-gradient-to-b from-[#111] to-[#0a0a0a] relative z-10 shadow-[0_-15px_40px_rgba(0,0,0,0.6)]">
+          <div className="px-5 py-3.5 font-bold text-[10px] tracking-[0.2em] text-gray-400 uppercase border-b border-white/5 flex justify-between items-center bg-[#050505]/50 backdrop-blur-md">
+            <span className="flex items-center drop-shadow-md"><Clock className="w-3.5 h-3.5 mr-2 text-indigo-400" /> FORGE TIMELINE</span>
           </div>
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
             {commits.length === 0 ? (
-              <div className="text-gray-500 text-xs text-center mt-4">No changes yet</div>
+              <div className="text-gray-600 text-[10px] text-center mt-10 font-mono tracking-[0.3em] uppercase opacity-50 relative">
+                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+                No stages forged yet
+              </div>
             ) : (
               commits.map((c, i) => (
-                <div key={c.id} className="relative pl-5 border-l border-[#222] last:border-transparent group">
-                  <div className="absolute w-2 h-2 bg-pink-500 rounded-full -left-[4.5px] top-1.5 ring-4 ring-[#0a0a0a] group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(236,72,153,0.8)]"></div>
-                  <div className="mb-1 flex items-baseline justify-between overflow-hidden">
-                    <span className="font-bold text-pink-400 text-[13px] tracking-wide">STAGE {i + 1}</span>
-                    <span className="text-[10px] text-gray-600 font-mono ml-2 whitespace-nowrap">{new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                <div key={c.id} className="relative pl-6 border-l border-white/10 last:border-transparent group pt-1 pb-1">
+                  <div className="absolute w-3.5 h-3.5 bg-[#0a0a0a] rounded-full -left-[8px] top-2 z-0 border border-white/10"></div>
+                  <div className="absolute w-2 h-2 bg-gradient-to-r from-pink-500 to-indigo-500 rounded-full -left-[4px] top-[11px] group-hover:scale-[1.8] group-hover:blur-[1px] transition-all duration-300 shadow-[0_0_15px_rgba(236,72,153,1)] z-10"></div>
+                  <div className="mb-3 flex items-baseline justify-between overflow-hidden">
+                    <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-indigo-400 text-[15px] tracking-[0.25em] uppercase items-center flex drop-shadow-lg font-display">
+                      STAGE {i + 1}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-mono ml-2 whitespace-nowrap bg-white/5 px-2.5 py-1 rounded-md border border-white/5 shadow-inner">{new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                   </div>
-                  <div className="text-indigo-200/70 text-xs italic mb-2.5 line-clamp-2 border-l-2 border-indigo-500/30 pl-2">"{c.prompt}"</div>
-                  <div className="p-3 rounded-lg bg-[#111] border border-[#222] text-xs shadow-inner hover:border-pink-500/30 transition-colors">
-                    <div className="text-emerald-400 font-mono mb-2 flex items-center bg-emerald-500/10 w-fit px-2 py-0.5 rounded border border-emerald-500/20"><Clock className="w-3 h-3 mr-1.5" />SAVED {(c.estimatedTimeSaved || '0 MINS').toUpperCase()}</div>
-                    <div className="text-gray-400 whitespace-pre-wrap leading-relaxed prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0.5">
+                  <div className="text-indigo-200/90 text-sm italic mb-4 line-clamp-2 border-l-2 border-indigo-500/30 pl-3 leading-relaxed drop-shadow-md font-light">"{c.prompt}"</div>
+                  <div className="p-5 rounded-2xl bg-[#111]/80 backdrop-blur-md border border-white/5 text-xs shadow-xl hover:shadow-[0_0_30px_rgba(236,72,153,0.1)] hover:border-pink-500/40 transition-all duration-300 relative overflow-hidden group/card text-gray-300">
+                    <div className="absolute inset-0 bg-gradient-to-br from-pink-500/5 to-indigo-500/5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                    <div className="absolute inset-[1px] bg-[#0f0f0f] rounded-[15px] z-0 opacity-80 pointer-events-none"></div>
+                    <div className="text-emerald-400 font-mono font-bold mb-4 flex items-center bg-emerald-500/10 w-fit px-3 py-1.5 rounded-lg border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)] relative z-10"><Clock className="w-3.5 h-3.5 mr-2" />SYS_SAVED: {(c.estimatedTimeSaved || '0 MINS').toUpperCase()}</div>
+                    <div className="text-gray-300 whitespace-pre-wrap leading-relaxed prose prose-invert prose-sm max-w-none prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-li:my-1 prose-strong:text-pink-300 prose-strong:drop-shadow-[0_0_5px_rgba(236,72,153,0.3)] relative z-10 font-[13px]">
                       <Markdown>{c.changelog}</Markdown>
                     </div>
                   </div>
@@ -480,13 +502,13 @@ export default function App() {
             )}
             <div ref={messagesEndRef} />
           </div>
-          <div className="border-t border-[#222] p-2 bg-[#050505]">
+          <div className="border-t border-[#222] p-3 bg-[#050505]">
             <button 
               onClick={() => setShowSettings(true)}
-              className="w-full flex items-center justify-center space-x-2 p-2.5 rounded-lg hover:bg-pink-500/10 text-gray-500 hover:text-pink-400 transition-all text-xs font-bold tracking-widest uppercase border border-transparent hover:border-pink-500/30"
+              className="w-full flex items-center justify-center space-x-2 p-3 rounded-xl bg-white/5 hover:bg-gradient-to-r hover:from-pink-500/20 hover:to-indigo-500/20 text-gray-400 hover:text-white transition-all text-[11px] font-black tracking-[0.2em] uppercase border border-white/5 hover:border-pink-500/30 hover:shadow-[0_0_15px_rgba(236,72,153,0.15)] group"
             >
-              <Settings className="w-4 h-4" />
-              <span>AI Settings</span>
+              <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
+              <span>Copilot Configuration</span>
             </button>
           </div>
         </div>
@@ -496,79 +518,92 @@ export default function App() {
       <AnimatePresence>
         {showSettings && (
           <div 
-            className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm px-4"
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center backdrop-blur-md px-4"
             onClick={() => setShowSettings(false)}
           >
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-[#1e1e1e] border border-[#333] rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+              className="bg-[#0f0f0f]/90 backdrop-blur-2xl border border-white/10 rounded-[28px] shadow-[0_0_100px_rgba(236,72,153,0.2)] w-full max-w-lg overflow-hidden relative"
             >
-              <div className="flex justify-between items-center p-4 border-b border-[#333] bg-[#1a1a1a]">
-                <h3 className="font-semibold text-lg flex items-center">
-                  <Settings className="w-5 h-5 mr-2 text-pink-400" />
-                  AI Provider Settings
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 shadow-[0_0_15px_rgba(236,72,153,0.8)]"></div>
+              <div className="flex justify-between items-center p-6 border-b border-white/5 bg-white/5">
+                <h3 className="font-black text-2xl flex items-center tracking-tight text-white font-display">
+                  <div className="p-2 bg-pink-500/10 rounded-lg mr-4 border border-pink-500/20 shadow-[inset_0_0_15px_rgba(236,72,153,0.1)]">
+                    <Settings className="w-5 h-5 text-pink-400 drop-shadow-[0_0_8px_rgba(236,72,153,0.8)]" />
+                  </div>
+                  Copilot Matrix
                 </h3>
-                <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white">
+                <button onClick={() => setShowSettings(false)} className="text-gray-500 hover:text-pink-400 transition-colors bg-[#222] hover:bg-pink-500/10 p-2 rounded-full border border-transparent hover:border-pink-500/30">
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">Provider</label>
+              <div className="p-8 space-y-8 bg-[#050505]/80">
+                <div className="group/field">
+                  <label className="block text-[11px] font-black font-mono tracking-[0.2em] uppercase text-gray-400 mb-3 group-hover/field:text-pink-400 transition-colors">Language Core Provider</label>
                   <select 
                     value={aiConfig.provider}
                     onChange={(e) => setAiConfig({...aiConfig, provider: e.target.value})}
-                    className="w-full bg-[#141414] border border-[#333] rounded-md px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[#111] border border-[#333] hover:border-pink-500/50 rounded-xl px-5 py-4 text-gray-200 focus:outline-none focus:border-pink-500 transition-all shadow-inner focus:shadow-[0_0_20px_rgba(236,72,153,0.15)] font-medium appearance-none"
                   >
-                    <option value="gemini">Default (Gemini API)</option>
-                    <option value="openai_compatible">Custom / Local (OpenAI Compatible)</option>
+                    <option value="gemini">Google Gemini AI Core (Default)</option>
+                    <option value="openai_compatible">Custom API Registry</option>
                   </select>
                 </div>
 
-                {aiConfig.provider === 'openai_compatible' && (
-                  <>
-                    <div className="p-3 bg-pink-500/10 border border-pink-500/20 rounded-lg text-xs text-pink-300">
-                      Use this to connect to Groq, Together, OpenAI, or local models. 
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Base URL</label>
-                      <input 
-                        type="url" 
-                        placeholder="e.g. https://api.groq.com/openai/v1"
-                        value={aiConfig.baseUrl}
-                        onChange={(e) => setAiConfig({...aiConfig, baseUrl: e.target.value})}
-                        className="w-full bg-[#141414] border border-[#333] rounded-md px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">API Key</label>
-                      <input 
-                        type="password" 
-                        placeholder="sk-..."
-                        value={aiConfig.apiKey}
-                        onChange={(e) => setAiConfig({...aiConfig, apiKey: e.target.value})}
-                        className="w-full bg-[#141414] border border-[#333] rounded-md px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Model Name</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. llama3-8b-8192"
-                        value={aiConfig.model}
-                        onChange={(e) => setAiConfig({...aiConfig, model: e.target.value})}
-                        className="w-full bg-[#141414] border border-[#333] rounded-md px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                  </>
-                )}
+                <AnimatePresence mode="popLayout">
+                  {aiConfig.provider === 'openai_compatible' && (
+                    <motion.div 
+                        initial={{ opacity: 0, height: 0, filter: "blur(10px)" }}
+                        animate={{ opacity: 1, height: 'auto', filter: "blur(0px)" }}
+                        exit={{ opacity: 0, height: 0, filter: "blur(10px)" }}
+                        transition={{ duration: 0.4 }}
+                        className="space-y-6 overflow-hidden"
+                    >
+                      <div className="p-5 bg-gradient-to-r from-pink-500/10 to-transparent border-l-4 border-l-pink-500 rounded-r-xl border-y border-r border-[#333] text-sm text-pink-100/90 leading-relaxed shadow-lg">
+                        <strong className="text-pink-400 font-bold block mb-1">Architecture Override:</strong> 
+                        Bind to custom neural networks like Ollama, Groq, Together AI, or standard OpenAI conformant endpoints.
+                      </div>
+                      <div className="group/field">
+                        <label className="block text-[11px] font-black font-mono tracking-[0.2em] uppercase text-gray-400 mb-3 group-hover/field:text-pink-400 transition-colors">Endpoint Matrix URL</label>
+                        <input 
+                          type="url" 
+                          placeholder="https://api.groq.com/openai/v1"
+                          value={aiConfig.baseUrl}
+                          onChange={(e) => setAiConfig({...aiConfig, baseUrl: e.target.value})}
+                          className="w-full bg-[#111] border border-[#333] rounded-xl px-5 py-4 text-gray-200 focus:outline-none focus:border-pink-500 hover:border-pink-500/50 transition-all font-mono text-sm placeholder-gray-600 focus:shadow-[0_0_20px_rgba(236,72,153,0.15)]"
+                        />
+                      </div>
+                      <div className="group/field">
+                        <label className="block text-[11px] font-black font-mono tracking-[0.2em] uppercase text-gray-400 mb-3 group-hover/field:text-pink-400 transition-colors">Access Token</label>
+                        <input 
+                          type="password" 
+                          placeholder="sk-..."
+                          value={aiConfig.apiKey}
+                          onChange={(e) => setAiConfig({...aiConfig, apiKey: e.target.value})}
+                          className="w-full bg-[#111] border border-[#333] rounded-xl px-5 py-4 text-gray-200 focus:outline-none focus:border-pink-500 hover:border-pink-500/50 transition-all font-mono text-sm placeholder-gray-600 focus:shadow-[0_0_20px_rgba(236,72,153,0.15)]"
+                        />
+                      </div>
+                      <div className="group/field">
+                        <label className="block text-[11px] font-black font-mono tracking-[0.2em] uppercase text-gray-400 mb-3 group-hover/field:text-pink-400 transition-colors">Target Node / Model</label>
+                        <input 
+                          type="text" 
+                          placeholder="llama3-70b-8192"
+                          value={aiConfig.model}
+                          onChange={(e) => setAiConfig({...aiConfig, model: e.target.value})}
+                          className="w-full bg-[#111] border border-[#333] rounded-xl px-5 py-4 text-gray-200 focus:outline-none focus:border-pink-500 hover:border-pink-500/50 transition-all font-mono text-sm placeholder-gray-600 focus:shadow-[0_0_20px_rgba(236,72,153,0.15)] bg-gradient-to-r focus:from-[#151515] focus:to-[#111]"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <div className="p-4 border-t border-[#333] bg-[#1a1a1a] flex justify-end">
-                <Button onClick={() => setShowSettings(false)} className="bg-pink-600 hover:bg-pink-500 text-white px-6">
-                  Save & Close
+              <div className="p-6 border-t border-white/5 bg-white/5 flex justify-end">
+                <Button onClick={() => setShowSettings(false)} className="bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white px-10 rounded-xl h-12 font-black tracking-widest uppercase text-xs shadow-[0_0_20px_rgba(236,72,153,0.4)] hover:shadow-[0_0_40px_rgba(236,72,153,0.7)] transition-all hover:scale-105 active:scale-95 border border-pink-500/30">
+                  Initialize Settings
                 </Button>
               </div>
             </motion.div>
@@ -612,12 +647,14 @@ export default function App() {
                       <div 
                         key={path}
                         onClick={() => setSelectedFilePath(path)}
-                        className={`flex items-center px-4 py-2 text-[13px] font-mono cursor-pointer border-r border-[#222] group min-w-0 max-w-[200px] transition-all duration-200 ${isSelected ? 'bg-[#0a0a0a] text-emerald-400 border-t-2 border-t-emerald-500 shadow-[inset_0_2px_20px_rgba(16,185,129,0.1)]' : 'text-gray-500 hover:bg-[#111] hover:text-gray-300 border-t-2 border-t-transparent'}`}
+                        className={`flex items-center px-5 py-2.5 text-[13px] font-mono cursor-pointer border-r border-[#1a1a1a] group min-w-0 max-w-[220px] transition-all duration-300 relative overflow-hidden ${isSelected ? 'bg-[#0a0a0a] text-pink-400 shadow-[inset_0_2px_20px_rgba(236,72,153,0.1)]' : 'text-gray-500 hover:bg-[#111] hover:text-gray-300'}`}
                       >
-                        <span className="truncate pr-2 select-none">{filename}</span>
+                        {isSelected && <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-pink-500 to-indigo-500 shadow-[0_0_10px_rgba(236,72,153,0.8)]"></div>}
+                        {isSelected && <div className="absolute inset-0 bg-gradient-to-t from-transparent to-pink-500/5 opacity-50"></div>}
+                        <span className="truncate pr-3 select-none relative z-10">{filename}</span>
                         <button 
                           onClick={(e) => handleCloseFile(e, path)}
-                          className={`p-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${isSelected ? 'opacity-100 hover:bg-emerald-500/20 hover:text-emerald-300' : 'hover:bg-[#333]'}`}
+                          className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-all relative z-10 ${isSelected ? 'opacity-100 hover:bg-pink-500/20 hover:text-pink-300 text-pink-500/50' : 'hover:bg-[#333] text-gray-500'}`}
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -628,11 +665,12 @@ export default function App() {
                )}
               
               {openFiles.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-gray-600 bg-[#0a0a0a] relative overflow-hidden">
-                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(16,185,129,0.05),transparent)] pointer-events-none"></div>
+                <div className="flex-1 flex items-center justify-center text-gray-600 bg-[#050505] relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(236,72,153,0.05),transparent)] pointer-events-none group-hover:bg-[radial-gradient(ellipse_at_center,rgba(236,72,153,0.08),transparent)] transition-all duration-700"></div>
+                  <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
                   <div className="text-center relative z-10">
-                    <Code2 className="w-16 h-16 mx-auto mb-4 opacity-10 text-emerald-500" />
-                    <p className="font-mono text-xs tracking-widest uppercase">System Awaiting Input / Select Module</p>
+                    <Code2 className="w-16 h-16 mx-auto mb-6 opacity-[0.15] text-pink-400 group-hover:opacity-30 group-hover:scale-110 transition-all duration-700 drop-shadow-[0_0_15px_rgba(236,72,153,0.2)]" />
+                    <p className="font-mono text-xs tracking-[0.3em] uppercase text-gray-600 group-hover:text-pink-500/50 transition-colors duration-700">System Awaiting Architecture Module</p>
                   </div>
                 </div>
               ) : (
@@ -642,32 +680,70 @@ export default function App() {
               <AnimatePresence>
                 {isGenerating && (
                   <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 bg-[#00000099] backdrop-blur-md flex flex-col items-center justify-center z-50 p-6 text-center"
+                    initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+                    animate={{ opacity: 1, backdropFilter: "blur(20px)" }}
+                    exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
+                    transition={{ duration: 0.5 }}
+                    className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50 p-6 text-center overflow-hidden"
                   >
-                    {isAutoImproving && (
+                    {isAutoImproving ? (
                       <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden mix-blend-screen">
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-pink-900/40 via-purple-900/20 to-transparent animate-pulse-slow"></div>
-                        <div className="w-[150%] h-[150%] bg-[conic-gradient(from_0deg_at_50%_50%,_var(--tw-gradient-stops))] from-transparent via-pink-500/10 to-transparent animate-spin-slow rounded-full mix-blend-screen" style={{ animationDuration: '4s' }} />
-                        <div className="w-[200%] h-[200%] bg-[radial-gradient(circle,_var(--tw-gradient-stops))] from-pink-900/30 via-purple-900/20 to-transparent animate-pulse-slow rounded-full" />
-                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay"></div>
+                        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPPHBhdGggZD0iTTAgMGg0MHYxbC00MCAuMXpNMCAwdi4xbC4xIDQwSDB6IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIi8+PC9zdmc+')] mix-blend-screen opacity-50 scanline"></div>
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-pink-600/30 via-purple-900/40 to-transparent animate-pulse-slow"></div>
+                        <div className="w-[200%] h-[200%] bg-[conic-gradient(from_0deg_at_50%_50%,_var(--tw-gradient-stops))] from-transparent via-pink-400/20 to-transparent animate-spin-slow rounded-full mix-blend-screen" style={{ animationDuration: '3s' }} />
+                        <div className="w-[150%] h-[150%] bg-[conic-gradient(from_180deg_at_50%_50%,_var(--tw-gradient-stops))] from-transparent via-indigo-400/20 to-transparent animate-spin-slow rounded-full mix-blend-screen" style={{ animationDuration: '5s', animationDirection: 'reverse' }} />
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-40 mix-blend-overlay"></div>
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden mix-blend-screen">
+                        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPPHBhdGggZD0iTTAgMGg0MHYxbC00MCAuMXpNMCAwdi4xbC4xIDQwSDB6IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIi8+PC9zdmc+')] mix-blend-screen opacity-30 scanline"></div>
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-900/30 via-[#0a0a0a] to-transparent animate-pulse-slow"></div>
                       </div>
                     )}
-                    <div className="w-20 h-20 relative flex items-center justify-center mb-6 z-10">
-                      <div className={`absolute inset-0 border-4 rounded-full ${isAutoImproving ? 'border-pink-500/20' : 'border-blue-500/20'}`}></div>
-                      <div className={`absolute inset-0 border-4 rounded-full border-t-transparent animate-spin ${isAutoImproving ? 'border-pink-500' : 'border-blue-500'}`}></div>
-                      <Wand2 className={`w-8 h-8 ${isAutoImproving ? 'text-pink-400 animate-bounce' : 'text-indigo-400 animate-pulse'}`} />
-                    </div>
-                    <h2 className="text-3xl font-bold mb-3 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-indigo-400 drop-shadow-md z-10 relative uppercase">
-                      {isAutoImproving ? "Automatique God-Mode Active" : "Forging Architecture..."}
-                    </h2>
-                    <p className="text-pink-100 text-base animate-pulse max-w-md z-10 relative drop-shadow">
-                      {isAutoImproving 
-                        ? "AI is continuously writing incredibly complex logic, deep state management, beautiful UIs, and robust architectures automatically. It will NOT stop until it deems the app an absolute production-grade masterpiece."
-                        : "Generating cross-platform modules, wiring logic, and rendering asset placeholders."}
-                    </p>
+                    <motion.div 
+                      initial={{ scale: 0.8, y: 20 }}
+                      animate={{ scale: 1, y: 0 }}
+                      transition={{ type: "spring", bounce: 0.5 }}
+                      className="w-32 h-32 md:w-40 md:h-40 relative flex items-center justify-center mb-10 z-10"
+                    >
+                      <div className={`absolute inset-0 border-[8px] rounded-full ${isAutoImproving ? 'border-pink-500/20 shadow-[0_0_80px_rgba(236,72,153,0.3)]' : 'border-indigo-500/20 shadow-[0_0_50px_rgba(99,102,241,0.2)]'}`}></div>
+                      <div className={`absolute inset-0 border-[8px] rounded-full border-t-transparent border-l-transparent animate-spin ${isAutoImproving ? 'border-pink-500 shadow-[0_0_40px_rgba(236,72,153,1)]' : 'border-indigo-500 shadow-[0_0_30px_rgba(99,102,241,0.5)]'}`} style={{ animationDuration: '1s' }}></div>
+                      <div className={`absolute inset-3 md:inset-4 border-[4px] rounded-full border-b-transparent border-r-transparent animate-spin ${isAutoImproving ? 'border-purple-400 opacity-90' : 'border-cyan-400 opacity-60'}`} style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
+                      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay pointer-events-none rounded-full"></div>
+                      <Wand2 className={`w-14 h-14 md:w-16 md:h-16 relative z-10 ${isAutoImproving ? 'text-pink-300 animate-pulse drop-shadow-[0_0_20px_rgba(236,72,153,1)]' : 'text-indigo-300 animate-pulse drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]'}`} />
+                    </motion.div>
+                    
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, filter: "blur(10px)" }}
+                      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                      transition={{ delay: 0.2 }}
+                      className="z-10 bg-black/60 p-10 md:p-14 md:max-w-4xl mx-auto rounded-[3rem] border border-white/10 backdrop-blur-3xl shadow-[0_0_100px_rgba(0,0,0,1)] relative overflow-hidden group"
+                    >
+                      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-10">
+                        <div className="w-full text-[10px] md:text-sm font-mono text-pink-500 whitespace-pre leading-none animate-pulse-slow font-black opacity-30">
+                          {Array(30).fill(0).map(() => Math.random().toString(16).substring(2, 100)).join('\n')}
+                        </div>
+                      </div>
+                      <div className={`absolute inset-0 opacity-30 ${isAutoImproving ? 'bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-500' : 'bg-gradient-to-br from-indigo-500 to-cyan-500'} blur-3xl transition-all duration-1000`}></div>
+                      <h2 className="text-5xl md:text-7xl lg:text-8xl font-display font-black mb-6 tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500 drop-shadow-2xl relative z-10 uppercase leading-[0.9]">
+                        {isAutoImproving ? (
+                          <span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 relative inline-block">
+                             <span className="absolute inset-0 blur-sm bg-clip-text text-transparent bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 opacity-50">God-Mode<br/>Active</span>
+                             God-Mode<br/>Active
+                          </span>
+                        ) : (
+                          "Forging<br/>System"
+                        )}
+                      </h2>
+                      <div className="h-1.5 w-32 mx-auto mb-8 rounded-full bg-gradient-to-r from-transparent via-white/50 to-transparent shadow-[0_0_15px_rgba(255,255,255,0.5)] relative overflow-hidden">
+                         <div className="absolute right-[100%] top-0 bottom-0 w-[50%] bg-white blur-[2px] animate-slide-right"></div>
+                      </div>
+                      <p className={`text-xl md:text-3xl font-light max-w-3xl mx-auto z-10 relative drop-shadow-xl leading-relaxed ${isAutoImproving ? 'text-pink-100/90' : 'text-indigo-100/90'}`}>
+                        {isAutoImproving 
+                          ? "AI is continuously weaving massive architectural logic, deep state matrices, and hyper-polished UI elements. It will not halt until absolute perfection is achieved."
+                          : "Constructing core modules, computing visual hierarchies, and establishing logic foundations."}
+                      </p>
+                    </motion.div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -676,17 +752,26 @@ export default function App() {
         )}
 
         {/* Input Bar */}
-        <div className="p-4 bg-gradient-to-r from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] border-t border-[#222] shrink-0 relative z-10 shadow-[0_-20px_50px_rgba(0,0,0,0.8)]">
-          <div className="max-w-4xl mx-auto relative">
-            <div className="relative flex items-center bg-[#050505] rounded-xl border border-[#333] focus-within:border-pink-500/50 focus-within:ring-1 focus-within:ring-pink-500/50 transition-all shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
+        <div className="p-6 lg:p-8 bg-gradient-to-t from-[#000] to-[#050505] border-t border-white/5 shrink-0 relative z-10 shadow-[0_-30px_60px_rgba(0,0,0,0.9)]">
+          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none"></div>
+          {isAutoImproving && (
+            <div className="absolute inset-0 bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 pointer-events-none animate-pulse-slow"></div>
+          )}
+          <div className="max-w-5xl mx-auto relative z-10">
+            <div className={`relative flex flex-col md:flex-row items-end md:items-center bg-[#0a0a0a]/80 backdrop-blur-3xl rounded-[2rem] border focus-within:shadow-[0_0_80px_rgba(236,72,153,0.25)] transition-all overflow-visible group shadow-2xl ${isAutoImproving ? 'border-pink-500/50 shadow-[0_0_50px_rgba(236,72,153,0.2)]' : 'border-white/10 hover:border-pink-500/50 focus-within:border-pink-500/80'}`}>
+              <div className="absolute inset-0 bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-[2rem]"></div>
+              {isAutoImproving && (
+                 <div className="absolute inset-0 bg-[length:200%_200%] animate-gradient-xy bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-indigo-500/20 rounded-[2rem] pointer-events-none blur-md"></div>
+              )}
               <textarea
-                className="w-full bg-transparent pl-4 pr-32 py-3.5 focus:outline-none text-white placeholder-gray-600 resize-none max-h-32 min-h-[52px] custom-scrollbar overflow-y-auto font-sans leading-relaxed"
-                placeholder={commits.length === 0 ? "Leave blank & click 'Full Automatique God Mode' for a massive app, or type a prompt..." : "What to change next? ... or leave blank & click Engage Automatique God Mode!"}
+                className="w-full bg-transparent pl-8 pr-6 md:pr-[380px] py-6 focus:outline-none text-white placeholder-gray-600 resize-none max-h-56 min-h-[72px] custom-scrollbar overflow-y-auto font-sans leading-relaxed text-sm lg:text-base z-10 relative font-medium group-focus-within:drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+                placeholder={commits.length === 0 ? "Describe visionary software, or press Ignite God Mode for automatic synthesis..." : "Command structural mutations, or re-engage Automatique..."}
                 value={currentPrompt}
                 onChange={(e) => {
                   setCurrentPrompt(e.target.value);
                   e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+                  if (currentPrompt.length === 0) e.target.style.height = '72px';
+                  else e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px';
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -699,39 +784,40 @@ export default function App() {
                 rows={1}
                 disabled={isAutoImproving}
               />
-              <div className="absolute right-2 bottom-2 flex items-center space-x-2">
+              <div className="absolute right-3 bottom-0 top-0 flex items-center space-x-3 md:space-x-4 pointer-events-auto z-20 pr-4">
                 {isAutoImproving ? (
                    <Button 
                      onClick={handleStopAutoImprove} 
-                     className="h-10 bg-red-600 hover:bg-red-500 text-white rounded-lg px-6 flex items-center shadow-lg shadow-red-500/50 font-bold border border-red-400"
+                     className="h-12 bg-red-600/90 hover:bg-red-500 text-white rounded-xl px-8 flex items-center shadow-[0_0_40px_rgba(239,68,68,0.6)] font-black tracking-widest uppercase border border-red-400 backdrop-blur-md transition-all hover:scale-105 active:scale-95 z-20 text-[11px]"
                    >
-                     <X className="w-5 h-5 mr-2" /> INTERRUPT GOD MODE
+                     <X className="w-5 h-5 mr-3 animate-pulse" /> HALT GOD MODE
                    </Button>
                 ) : (
                   <>
                       <Button 
                         onClick={() => handleGenerate(true)} 
                         disabled={isGenerating}
-                        className={`h-10 px-4 rounded-xl text-white disabled:opacity-50 transition-all duration-300 text-xs font-bold tracking-widest flex items-center shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:shadow-[0_0_30px_rgba(236,72,153,0.6)] hover:scale-105 active:scale-95 ${commits.length === 0 ? "bg-[length:200%_200%] animate-gradient-xy bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 outline outline-2 outline-offset-2 outline-pink-500/50" : "bg-gradient-to-r from-pink-600 to-indigo-600 outline outline-1 outline-pink-500/30"}`}
+                        className={`h-12 px-6 rounded-xl text-white disabled:opacity-50 transition-all duration-500 text-[11px] uppercase font-black tracking-[0.2em] flex items-center shadow-[0_0_30px_rgba(236,72,153,0.4)] hover:shadow-[0_0_50px_rgba(236,72,153,0.8)] hover:scale-105 active:scale-95 z-20 ${commits.length === 0 ? "bg-[length:250%_250%] animate-gradient-xy bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 outline outline-2 outline-offset-2 outline-pink-500/60" : "bg-gradient-to-r from-pink-600 to-indigo-600 outline outline-1 outline-pink-500/40"}`}
                         title="Autonomous Full App Generator Loop"
                       >
-                         <Wand2 className={`w-3.5 h-3.5 mr-1.5 ${commits.length === 0 ? "animate-spin-slow" : ""}`} /> {commits.length > 0 ? "Engage Automatique God Mode" : "Full Automatique God Mode"}
+                         <Wand2 className={`w-4 h-4 md:mr-3 ${commits.length === 0 ? "animate-spin-slow drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : ""}`} /> 
+                         <span className="hidden md:inline">{commits.length > 0 ? "Engage God Mode" : "Ignite God Mode"}</span>
                       </Button>
                     <Button 
                       onClick={() => handleGenerate(false)} 
                       disabled={isGenerating || !currentPrompt.trim()}
                       size="icon"
-                      className="h-9 w-9 bg-pink-600 hover:bg-pink-500 rounded-lg text-white disabled:opacity-50 transition-all shadow-lg shadow-pink-500/20"
+                      className="h-12 w-12 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/30 backdrop-blur-md rounded-xl text-white disabled:opacity-30 transition-all shadow-inner hover:scale-105 active:scale-95 z-20 group"
                     >
-                      {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
+                      {isGenerating ? <Loader2 className="w-5 h-5 animate-spin text-pink-400" /> : <Send className="w-5 h-5 ml-1 text-gray-300 drop-shadow-md group-hover:text-white" />}
                     </Button>
                   </>
                 )}
               </div>
             </div>
-            <div className="mt-2 flex justify-between items-center text-[10px] text-gray-500">
-              <span>Press <kbd className="font-mono bg-[#252525] px-1 rounded mx-0.5 text-gray-400">Enter</kbd> to send, <kbd className="font-mono bg-[#252525] px-1 rounded mx-0.5 text-gray-400">Shift</kbd> + <kbd className="font-mono bg-[#252525] px-1 rounded mx-0.5 text-gray-400">Enter</kbd> for new line.</span>
-              <span className="hidden sm:inline">Powered by {aiConfig.provider === 'gemini' ? 'Gemini Models' : (aiConfig.model || 'Custom Model')}</span>
+            <div className="mt-4 flex justify-between items-center text-[10px] text-gray-500 tracking-wide font-medium">
+              <span>PRESS <kbd className="font-mono bg-white/5 border border-white/10 px-1.5 py-0.5 rounded mx-1 text-gray-400 shadow-inner">ENTER</kbd> TO SEND &bull; <kbd className="font-mono bg-white/5 border border-white/10 px-1.5 py-0.5 rounded mx-1 text-gray-400 shadow-inner">SHIFT + ENTER</kbd> FOR NEW LINE</span>
+              <span className="hidden sm:inline text-pink-500/70 font-mono tracking-widest"><kbd className="mr-2">⚡</kbd>POWERED BY {aiConfig.provider === 'gemini' ? 'GEMINI' : (aiConfig.model || 'CUSTOM MODEL').toUpperCase()}</span>
             </div>
           </div>
         </div>
