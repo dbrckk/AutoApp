@@ -1,10 +1,12 @@
 import { buildCoderPrompt } from "../agents/coder";
+import { buildDebuggerPrompt } from "../agents/debugger";
 import { buildPlannerPrompt } from "../agents/planner";
 import { buildReviewerPrompt } from "../agents/reviewer";
+import { virtualBuildCheck } from "../sandbox/virtualBuild";
 import { mergeFiles } from "./fileMerge";
 import { parseAiJson } from "./json";
 import { scoreProject } from "./scoring";
-import type { AiCaller, GenerateInput, GenerateOutput } from "./types";
+import type { AiCaller, GenerateInput, GenerateOutput, VirtualFile } from "./types";
 
 export async function orchestrateGeneration(
   input: GenerateInput,
@@ -34,28 +36,65 @@ export async function orchestrateGeneration(
   );
 
   const generated = parseAiJson<{
-    files: { path: string; content: string | null }[];
+    files: VirtualFile[];
     changelog: string;
     estimatedTimeSaved: string;
   }>(coderRaw.text);
 
-  const mergedFiles = mergeFiles(input.currentFiles || [], generated.files || []);
-  const score = scoreProject(mergedFiles);
+  let mergedFiles = mergeFiles(input.currentFiles || [], generated.files || []);
+  let buildResult = virtualBuildCheck(mergedFiles);
 
-  const nextActions = buildNextActions(score);
+  let finalGeneratedFiles = generated.files || [];
+  let changelog = generated.changelog || "Project updated.";
+
+  if (!buildResult.ok) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const debuggerRaw = await callAi(
+        buildDebuggerPrompt({
+          files: mergedFiles,
+          issues: buildResult.issues,
+          buildLog: buildResult.log,
+        })
+      );
+
+      const fixed = parseAiJson<{
+        files: VirtualFile[];
+        changelog: string;
+        estimatedTimeSaved: string;
+      }>(debuggerRaw.text);
+
+      mergedFiles = mergeFiles(mergedFiles, fixed.files || []);
+      finalGeneratedFiles = mergeFiles(finalGeneratedFiles, fixed.files || []);
+      changelog += `\nRepair ${attempt}: ${fixed.changelog || "Build issues repaired."}`;
+
+      buildResult = virtualBuildCheck(mergedFiles);
+
+      if (buildResult.ok) break;
+    }
+  }
+
+  const score = scoreProject(mergedFiles);
+  const nextActions = buildNextActions(score, buildResult);
 
   return {
-    files: generated.files || [],
-    changelog: generated.changelog || "Project updated.",
+    files: finalGeneratedFiles,
+    changelog,
     estimatedTimeSaved: generated.estimatedTimeSaved || "Several hours saved.",
     score,
     nextActions,
-    mode,
+    mode: buildResult.ok ? mode : "repair",
   };
 }
 
-function buildNextActions(score: ReturnType<typeof scoreProject>) {
+function buildNextActions(
+  score: ReturnType<typeof scoreProject>,
+  buildResult: ReturnType<typeof virtualBuildCheck>
+) {
   const actions: string[] = [];
+
+  if (!buildResult.ok) {
+    actions.push("Fix remaining virtual build issues.");
+  }
 
   if (score.architecture < 85) actions.push("Improve project architecture and file separation.");
   if (score.ui < 85) actions.push("Improve visual hierarchy, spacing, states and animations.");
