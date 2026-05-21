@@ -1,8 +1,10 @@
+import { compactProjectContext } from "../engine/projectContext";
 import type { ProjectScore, VirtualFile } from "../engine/types";
 
 export function buildReviewerPrompt(files: VirtualFile[], score: ProjectScore) {
   const fileList = files.map((file) => file.path).join("\n");
   const summary = summarizeFiles(files);
+  const projectContext = compactProjectContext(files);
 
   return `
 You are the REVIEWER agent of Forge AI App Builder.
@@ -14,6 +16,9 @@ ${JSON.stringify(score, null, 2)}
 
 FILES:
 ${fileList}
+
+PROJECT CONTEXT:
+${projectContext}
 
 PROJECT SUMMARY:
 ${summary}
