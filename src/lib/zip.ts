@@ -1,16 +1,43 @@
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
-import { VirtualFile } from '../types';
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
+import type { VirtualFile } from "../types";
 
-export const downloadProjectAsZip = async (projectFiles: VirtualFile[], projectName: string = 'forge-app') => {
+function sanitizeFileName(name: string) {
+  return (
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "forge-project"
+  );
+}
+
+function normalizePath(path: string) {
+  return path.replace(/^\/+/, "");
+}
+
+export async function downloadZip(files: VirtualFile[], projectName = "forge-project") {
   const zip = new JSZip();
 
-  for (const file of projectFiles) {
-    // Remove leading slash if present to avoid absolute path issues in ZIP
-    const filePath = file.path.startsWith('/') ? file.path.substring(1) : file.path;
-    zip.file(filePath, file.content);
+  for (const file of files) {
+    if (!file.content) continue;
+
+    const path = normalizePath(file.path);
+
+    if (!path) continue;
+
+    zip.file(path, file.content);
   }
 
-  const content = await zip.generateAsync({ type: 'blob' });
-  saveAs(content, `${projectName}.zip`);
-};
+  const blob = await zip.generateAsync({
+    type: "blob",
+    compression: "DEFLATE",
+    compressionOptions: {
+      level: 6,
+    },
+  });
+
+  saveAs(blob, `${sanitizeFileName(projectName)}.zip`);
+}
+
+export const downloadProjectAsZip = downloadZip;
