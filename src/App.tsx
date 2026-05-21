@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 
 import { BuildPanel } from "./components/BuildPanel";
 import { CodeViewer } from "./components/CodeViewer";
+import { FileEditorPanel } from "./components/FileEditorPanel";
 import { FileTree } from "./components/FileTree";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { ScorePanel } from "./components/ScorePanel";
@@ -89,7 +90,8 @@ export default function App() {
   });
 
   const [prompt, setPrompt] = useState("");
-  const [selectedPath, setSelectedPath] = useState<string>("");
+  const [selectedPath, setSelectedPath] = useState("");
+  const [newFilePath, setNewFilePath] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAutoImprove, setIsAutoImprove] = useState(false);
   const [buildMode, setBuildMode] = useState<BuildMode>("virtual");
@@ -144,9 +146,7 @@ export default function App() {
   function updateProject(project: Project) {
     setProjects((prev) => {
       const exists = prev.some((p) => p.id === project.id);
-
       if (!exists) return [project, ...prev];
-
       return prev.map((p) => (p.id === project.id ? project : p));
     });
 
@@ -261,12 +261,87 @@ export default function App() {
     }
   }
 
+  function saveFile(path: string, content: string) {
+    if (!activeProject) return;
+
+    const normalized = normalizePath(path);
+
+    const updatedFiles = mergeFiles(activeProject.files, [
+      {
+        path: normalized,
+        content,
+      },
+    ]);
+
+    updateProject({
+      ...activeProject,
+      files: updatedFiles,
+      updatedAt: now(),
+      commits: [
+        {
+          id: uid(),
+          message: `Manual edit: ${normalized}`,
+          timestamp: now(),
+          files: [{ path: normalized, content }],
+          score: activeProject.score,
+        },
+        ...activeProject.commits,
+      ],
+    });
+
+    setSelectedPath(normalized);
+    setBuildResult(null);
+  }
+
+  function deleteFile(path: string) {
+    if (!activeProject) return;
+
+    const normalized = normalizePath(path);
+
+    const updatedFiles = mergeFiles(activeProject.files, [
+      {
+        path: normalized,
+        content: null,
+      },
+    ]);
+
+    updateProject({
+      ...activeProject,
+      files: updatedFiles,
+      updatedAt: now(),
+      commits: [
+        {
+          id: uid(),
+          message: `Deleted file: ${normalized}`,
+          timestamp: now(),
+          files: [{ path: normalized, content: null }],
+          score: activeProject.score,
+        },
+        ...activeProject.commits,
+      ],
+    });
+
+    setSelectedPath(updatedFiles[0]?.path || "");
+    setBuildResult(null);
+  }
+
+  function createFile() {
+    if (!activeProject) return;
+
+    const normalized = normalizePath(newFilePath.trim());
+    if (!normalized || normalized === "/") return;
+
+    saveFile(normalized, "");
+    setNewFilePath("");
+  }
+
   function handleNewProject() {
     const project = createEmptyProject("");
 
     updateProject(project);
     setPrompt("");
     setSelectedPath("");
+    setNewFilePath("");
     setBuildResult(null);
     setLastResponse(null);
     setError("");
@@ -299,16 +374,12 @@ export default function App() {
       <div className="relative mx-auto flex min-h-screen max-w-[1600px] flex-col p-4 lg:p-6">
         <header className="mb-4 flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">
-              Forge
-            </p>
-
+            <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Forge</p>
             <h1 className="text-2xl font-black tracking-tight text-white md:text-4xl">
               AI App Builder
             </h1>
-
             <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-              Generate, improve, score, repair, preview and export production-ready app projects.
+              Generate, improve, score, repair, preview, edit and export production-ready app projects.
             </p>
           </div>
 
@@ -363,7 +434,6 @@ export default function App() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold">{project.name}</p>
-
                         <p className="mt-1 text-xs text-zinc-500">
                           {project.files.length} files · {project.score?.total ?? "—"} score
                         </p>
@@ -398,6 +468,23 @@ export default function App() {
                   Generated files will appear here.
                 </p>
               )}
+
+              <div className="mt-4 flex gap-2">
+                <input
+                  value={newFilePath}
+                  onChange={(event) => setNewFilePath(event.target.value)}
+                  placeholder="/src/new-file.ts"
+                  className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white outline-none placeholder:text-zinc-600"
+                />
+
+                <button
+                  onClick={createFile}
+                  disabled={!activeProject}
+                  className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-black disabled:opacity-40"
+                >
+                  Add
+                </button>
+              </div>
             </section>
           </aside>
 
@@ -406,7 +493,6 @@ export default function App() {
               <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold">Prompt</h2>
-
                   <p className="text-xs text-zinc-500">
                     Describe the app or the improvement you want.
                   </p>
@@ -470,7 +556,6 @@ export default function App() {
                   <p className="truncate text-sm font-semibold">
                     {selectedFile?.path || "No file selected"}
                   </p>
-
                   <p className="text-xs text-zinc-500">
                     {selectedFile?.content?.length
                       ? `${selectedFile.content.length.toLocaleString()} characters`
@@ -497,6 +582,12 @@ export default function App() {
                 )}
               </div>
             </section>
+
+            <FileEditorPanel
+              file={selectedFile}
+              onSave={saveFile}
+              onDelete={deleteFile}
+            />
           </section>
 
           <aside className="space-y-4">
@@ -505,9 +596,7 @@ export default function App() {
 
               <div className="space-y-3">
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    Provider
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">Provider</span>
 
                   <select
                     value={aiConfig.provider || "gemini"}
@@ -526,9 +615,7 @@ export default function App() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    Model
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">Model</span>
 
                   <input
                     value={aiConfig.model || ""}
@@ -544,9 +631,7 @@ export default function App() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    API Key
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">API Key</span>
 
                   <input
                     type="password"
@@ -563,9 +648,81 @@ export default function App() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    Base URL
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">Base URL</span>
 
                   <input
-  
+                    value={aiConfig.baseUrl || ""}
+                    onChange={(event) =>
+                      setAiConfig((prev) => ({
+                        ...prev,
+                        baseUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://api.groq.com/openai/v1"
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none placeholder:text-zinc-700"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <ScorePanel
+              score={activeProject?.score}
+              nextActions={activeProject?.nextActions}
+            />
+
+            <BuildPanel
+              result={buildResult}
+              loading={isCheckingBuild}
+              onCheckVirtual={() => handleBuildCheck("virtual")}
+              onCheckReal={() => handleBuildCheck("real")}
+            />
+
+            {lastResponse && (
+              <motion.section
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl"
+              >
+                <h2 className="mb-2 text-sm font-semibold">Last generation</h2>
+
+                <p className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">
+                  {lastResponse.changelog}
+                </p>
+
+                <div className="mt-3 rounded-2xl bg-black/30 p-3 text-xs text-zinc-400">
+                  Mode: {lastResponse.mode || "create"} · Saved:{" "}
+                  {lastResponse.estimatedTimeSaved || "—"}
+                </div>
+              </motion.section>
+            )}
+
+            {activeProject?.commits?.length ? (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                <h2 className="mb-3 text-sm font-semibold">History</h2>
+
+                <div className="max-h-80 space-y-2 overflow-auto">
+                  {activeProject.commits.map((commit) => (
+                    <div
+                      key={commit.id}
+                      className="rounded-2xl border border-white/10 bg-black/25 p-3"
+                    >
+                      <p className="line-clamp-3 text-xs text-zinc-300">
+                        {commit.message}
+                      </p>
+
+                      <p className="mt-2 text-[11px] text-zinc-600">
+                        {new Date(commit.timestamp).toLocaleString()} ·{" "}
+                        {commit.files.length} changed files · score{" "}
+                        {commit.score?.total ?? "—"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </aside>
+        </main>
+      </div>
+    </div>
+  );
+}
