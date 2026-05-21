@@ -27,10 +27,9 @@ function getLanguage(path = "") {
   if (path.endsWith(".js")) return "javascript";
   if (path.endsWith(".css")) return "css";
   if (path.endsWith(".json")) return "json";
-  if (path.endsWith(".html")) return "html";
+  if (path.endsWith(".html")) return "markup";
   if (path.endsWith(".md")) return "markdown";
   if (path.endsWith(".yml") || path.endsWith(".yaml")) return "yaml";
-  if (path.endsWith(".sql")) return "sql";
   if (path.endsWith(".sh")) return "bash";
   return "text";
 }
@@ -40,13 +39,50 @@ function loadSyntaxHighlighter() {
 
   if (!loadingPromise) {
     loadingPromise = Promise.all([
-      import("react-syntax-highlighter"),
-      import("react-syntax-highlighter/dist/esm/styles/prism"),
-    ]).then(([highlighterModule, themeModule]) => {
-      cachedHighlighter =
-        highlighterModule.Prism as unknown as ComponentType<SyntaxHighlighterProps>;
-      cachedTheme = themeModule.vscDarkPlus;
-    });
+      import("react-syntax-highlighter/dist/esm/prism-light"),
+      import("react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/typescript"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/tsx"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/javascript"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/jsx"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/css"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/json"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/markup"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/markdown"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/yaml"),
+      import("react-syntax-highlighter/dist/esm/languages/prism/bash"),
+    ]).then(
+      ([
+        highlighterModule,
+        themeModule,
+        typescript,
+        tsx,
+        javascript,
+        jsx,
+        css,
+        json,
+        markup,
+        markdown,
+        yaml,
+        bash,
+      ]) => {
+        const PrismLight = highlighterModule.default;
+
+        PrismLight.registerLanguage("typescript", typescript.default);
+        PrismLight.registerLanguage("tsx", tsx.default);
+        PrismLight.registerLanguage("javascript", javascript.default);
+        PrismLight.registerLanguage("jsx", jsx.default);
+        PrismLight.registerLanguage("css", css.default);
+        PrismLight.registerLanguage("json", json.default);
+        PrismLight.registerLanguage("markup", markup.default);
+        PrismLight.registerLanguage("markdown", markdown.default);
+        PrismLight.registerLanguage("yaml", yaml.default);
+        PrismLight.registerLanguage("bash", bash.default);
+
+        cachedHighlighter = PrismLight as unknown as ComponentType<SyntaxHighlighterProps>;
+        cachedTheme = themeModule.default;
+      }
+    );
   }
 
   return loadingPromise;
@@ -107,11 +143,11 @@ export function CodeViewer({ file }: CodeViewerProps) {
   const content = file.content || "// Empty file";
   const isImagePlaceholder = content.startsWith("https://image.pollinations.ai/");
 
-  const handleCopy = () => {
+  function handleCopy() {
     navigator.clipboard.writeText(content);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
-  };
+  }
 
   const Highlighter = cachedHighlighter;
 
@@ -128,26 +164,47 @@ export function CodeViewer({ file }: CodeViewerProps) {
 
       {!isImagePlaceholder && (
         <button
+          type="button"
           onClick={handleCopy}
           className="absolute right-6 top-16 z-30 rounded-xl border border-white/10 bg-[#1a1a1a]/80 p-2.5 text-gray-400 opacity-0 shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-pink-500/50 hover:bg-pink-500/20 hover:text-pink-300 group-hover:opacity-100 active:scale-95"
           title="Copy Code"
-          type="button"
         >
-          {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+          {copied ? (
+            <Check className="h-4 w-4 text-emerald-400" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
         </button>
       )}
 
       <div className="relative flex-1 overflow-auto">
         {isImagePlaceholder ? (
           <div className="flex h-full items-center justify-center p-8">
-            <img src={content} alt={file.path} className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl" />
+            <img
+              src={content}
+              alt={file.path}
+              className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl"
+            />
           </div>
         ) : ready && Highlighter && cachedTheme ? (
           <Highlighter
             language={getLanguage(file.path)}
             style={cachedTheme}
-            customStyle={{ margin: 0, padding: "2.5rem 2rem", minHeight: "100%", fontSize: "13.5px", lineHeight: "1.7", backgroundColor: "transparent" }}
-            lineNumberStyle={{ minWidth: "3.5em", paddingRight: "2em", color: "#333", textAlign: "right", fontSize: "12px" }}
+            customStyle={{
+              margin: 0,
+              padding: "2.5rem 2rem",
+              minHeight: "100%",
+              fontSize: "13.5px",
+              lineHeight: "1.7",
+              backgroundColor: "transparent",
+            }}
+            lineNumberStyle={{
+              minWidth: "3.5em",
+              paddingRight: "2em",
+              color: "#333",
+              textAlign: "right",
+              fontSize: "12px",
+            }}
             showLineNumbers
             wrapLongLines
           >
