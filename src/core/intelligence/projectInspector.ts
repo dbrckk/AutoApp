@@ -13,27 +13,32 @@ export type ProjectInspection = {
 };
 
 export function inspectProject(files: VirtualFile[]): ProjectInspection {
-  const paths = files.map((file) => normalizePath(file.path));
-  const packageJson = readPackageJson(files);
+  const normalizedFiles = files.map((file) => ({
+    ...file,
+    path: normalizePath(file.path),
+  }));
+
+  const paths = normalizedFiles.map((file) => file.path);
+  const packageJson = readPackageJson(normalizedFiles);
 
   const dependencies = Object.keys(packageJson?.dependencies || {});
   const devDependencies = Object.keys(packageJson?.devDependencies || {});
   const allDeps = [...dependencies, ...devDependencies];
 
-  const framework = detectFramework(paths, allDeps);
+  const framework = detectFramework(paths, allDeps, packageJson);
   const language = detectLanguage(paths);
   const packageManager = detectPackageManager(paths);
-  const entrypoints = detectEntrypoints(paths);
+  const entrypoints = detectEntrypoints(paths, framework);
   const missingCriticalFiles = detectMissingCriticalFiles(paths, framework);
-  const risks = detectRisks(files, framework, allDeps);
-  const strengths = detectStrengths(files, framework, allDeps);
+  const risks = detectRisks(normalizedFiles, framework, allDeps, packageJson);
+  const strengths = detectStrengths(normalizedFiles, framework, allDeps);
 
   return {
     framework,
     language,
     packageManager,
-    dependencies,
-    devDependencies,
+    dependencies: dependencies.sort(),
+    devDependencies: devDependencies.sort(),
     entrypoints,
     missingCriticalFiles,
     risks,
@@ -56,17 +61,42 @@ function readPackageJson(files: VirtualFile[]) {
   }
 }
 
-function detectFramework(paths: string[], deps: string[]) {
-  if (deps.includes("next")) return "Next.js";
-  if (deps.includes("@vitejs/plugin-react") || paths.includes("/vite.config.ts")) return "Vite React";
-  if (deps.includes("expo")) return "Expo";
+function detectFramework(paths: string[], deps: string[], packageJson: any) {
+  const scripts = packageJson?.scripts || {};
+  const scriptText = Object.values(scripts).join(" ").toLowerCase();
+
+  if (deps.includes("next") || paths.includes("/next.config.js") || paths.includes("/next.config.ts")) {
+    return "Next.js";
+  }
+
+  if (
+    deps.includes("expo") ||
+    paths.includes("/app.json") ||
+    paths.includes("/app.config.js") ||
+    paths.includes("/app.config.ts")
+  ) {
+    return "Expo";
+  }
+
   if (deps.includes("react-native")) return "React Native";
-  if (deps.includes("astro")) return "Astro";
-  if (deps.includes("vue")) return "Vue";
-  if (deps.includes("svelte")) return "Svelte";
-  if (deps.includes("@tauri-apps/api")) return "Tauri";
-  if (deps.includes("electron")) return "Electron";
+  if (deps.includes("astro") || paths.includes("/astro.config.mjs")) return "Astro";
+  if (deps.includes("vue") || paths.includes("/src/App.vue")) return "Vue";
+  if (deps.includes("svelte") || paths.includes("/svelte.config.js")) return "Svelte";
+  if (deps.includes("@tauri-apps/api") || paths.includes("/src-tauri/tauri.conf.json")) return "Tauri";
+  if (deps.includes("electron") || paths.includes("/electron/main.ts")) return "Electron";
+
+  if (
+    deps.includes("@vitejs/plugin-react") ||
+    deps.includes("vite") ||
+    paths.includes("/vite.config.ts") ||
+    paths.includes("/vite.config.js") ||
+    scriptText.includes("vite")
+  ) {
+    return "Vite React";
+  }
+
   if (deps.includes("react")) return "React";
+
   return "Unknown";
 }
 
@@ -76,6 +106,7 @@ function detectLanguage(paths: string[]) {
 
   if (tsCount > jsCount) return "TypeScript";
   if (jsCount > 0) return "JavaScript";
+
   return "Unknown";
 }
 
@@ -86,21 +117,51 @@ function detectPackageManager(paths: string[]) {
   return "npm";
 }
 
-function detectEntrypoints(paths: string[]) {
-  return paths.filter((path) =>
-    [
+function detectEntrypoints(paths: string[], framework: string) {
+  const candidatesByFramework: Record<string, string[]> = {
+    "Vite React": [
+      "/index.html",
       "/src/main.tsx",
       "/src/main.jsx",
       "/src/App.tsx",
       "/src/App.jsx",
-      "/pages/index.tsx",
+    ],
+    "Next.js": [
       "/app/page.tsx",
-      "/server.ts",
-      "/server.js",
-      "/src/index.ts",
-      "/src/index.tsx",
-    ].includes(path)
-  );
+      "/app/page.jsx",
+      "/pages/index.tsx",
+      "/pages/index.jsx",
+    ],
+    Expo: [
+      "/App.tsx",
+      "/App.jsx",
+      "/app/index.tsx",
+      "/app/_layout.tsx",
+      "/index.js",
+    ],
+    "React Native": [
+      "/App.tsx",
+      "/App.jsx",
+      "/index.js",
+    ],
+    Astro: [
+      "/src/pages/index.astro",
+      "/astro.config.mjs",
+    ],
+  };
+
+  const candidates = candidatesByFramework[framework] || [
+    "/src/main.tsx",
+    "/src/main.jsx",
+    "/src/App.tsx",
+    "/src/App.jsx",
+    "/app/page.tsx",
+    "/pages/index.tsx",
+    "/App.tsx",
+    "/App.jsx",
+  ];
+
+  return candidates.filter((path) => paths.includes(path));
 }
 
 function detectMissingCriticalFiles(paths: string[], framework: string) {
@@ -112,35 +173,54 @@ function detectMissingCriticalFiles(paths: string[], framework: string) {
 
   if (framework === "Vite React") {
     if (!paths.includes("/index.html")) missing.push("/index.html");
+
     if (!paths.includes("/vite.config.ts") && !paths.includes("/vite.config.js")) {
       missing.push("/vite.config.ts");
     }
+
     if (!paths.includes("/src/main.tsx") && !paths.includes("/src/main.jsx")) {
       missing.push("/src/main.tsx");
+    }
+
+    if (!paths.includes("/src/App.tsx") && !paths.includes("/src/App.jsx")) {
+      missing.push("/src/App.tsx");
     }
   }
 
   if (framework === "Next.js") {
-    if (!paths.includes("/next.config.js") && !paths.includes("/next.config.ts")) {
-      missing.push("/next.config.js");
-    }
     if (!paths.includes("/app/page.tsx") && !paths.includes("/pages/index.tsx")) {
-      missing.push("/app/page.tsx");
+      missing.push("/app/page.tsx or /pages/index.tsx");
+    }
+  }
+
+  if (framework === "Expo") {
+    if (
+      !paths.includes("/App.tsx") &&
+      !paths.includes("/App.jsx") &&
+      !paths.includes("/app/index.tsx")
+    ) {
+      missing.push("/App.tsx or /app/index.tsx");
     }
   }
 
   return missing;
 }
 
-function detectRisks(files: VirtualFile[], framework: string, deps: string[]) {
+function detectRisks(
+  files: VirtualFile[],
+  framework: string,
+  deps: string[],
+  packageJson: any
+) {
   const risks: string[] = [];
   const allContent = files.map((file) => file.content || "").join("\n");
 
   if (framework === "Unknown") risks.push("Framework could not be detected.");
+  if (!packageJson) risks.push("package.json is missing or invalid.");
   if (!deps.length) risks.push("No dependencies detected.");
-  if (allContent.includes("any")) risks.push("Loose TypeScript usage detected.");
+  if (/\bany\b/.test(allContent)) risks.push("Loose TypeScript any usage detected.");
   if (allContent.includes("console.log")) risks.push("Debug console logs detected.");
-  if (!allContent.includes("try") && !allContent.includes("catch")) {
+  if (!allContent.includes("try") || !allContent.includes("catch")) {
     risks.push("Weak error handling.");
   }
   if (!allContent.includes("aria-") && !allContent.includes("alt=")) {
@@ -150,7 +230,11 @@ function detectRisks(files: VirtualFile[], framework: string, deps: string[]) {
     risks.push("SEO metadata appears incomplete.");
   }
 
-  return risks;
+  const scripts = packageJson?.scripts || {};
+  if (!scripts.build) risks.push("Missing build script.");
+  if (!scripts.dev) risks.push("Missing dev script.");
+
+  return unique(risks);
 }
 
 function detectStrengths(files: VirtualFile[], framework: string, deps: string[]) {
@@ -159,12 +243,30 @@ function detectStrengths(files: VirtualFile[], framework: string, deps: string[]
   const allContent = files.map((file) => file.content || "").join("\n");
 
   if (framework !== "Unknown") strengths.push(`${framework} detected.`);
-  if (paths.some((path) => path.includes("/components/"))) strengths.push("Component structure detected.");
-  if (paths.some((path) => path.includes("/lib/"))) strengths.push("Shared library layer detected.");
+  if (paths.some((path) => path.includes("/components/"))) {
+    strengths.push("Component structure detected.");
+  }
+  if (paths.some((path) => path.includes("/lib/"))) {
+    strengths.push("Shared library layer detected.");
+  }
+  if (paths.some((path) => path.includes("/hooks/"))) {
+    strengths.push("Hooks layer detected.");
+  }
   if (deps.includes("tailwindcss")) strengths.push("Tailwind CSS detected.");
-  if (allContent.includes("aria-") || allContent.includes("alt=")) strengths.push("Accessibility markers detected.");
-  if (allContent.includes("og:title") || allContent.includes("twitter:card")) strengths.push("SEO/social metadata detected.");
-  if (allContent.includes("try") && allContent.includes("catch")) strengths.push("Error handling detected.");
+  if (deps.includes("lucide-react")) strengths.push("Icon system detected.");
+  if (allContent.includes("aria-") || allContent.includes("alt=")) {
+    strengths.push("Accessibility markers detected.");
+  }
+  if (allContent.includes("og:title") || allContent.includes("twitter:card")) {
+    strengths.push("SEO/social metadata detected.");
+  }
+  if (allContent.includes("try") && allContent.includes("catch")) {
+    strengths.push("Error handling detected.");
+  }
 
-  return strengths;
+  return unique(strengths);
 }
+
+function unique(items: string[]) {
+  return Array.from(new Set(items)).filter(Boolean);
+      }
