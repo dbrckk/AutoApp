@@ -47,7 +47,10 @@ export function scoreProject(files: VirtualFile[]): ProjectScore {
 
 function getSignals(files: VirtualFile[]): Signals {
   const paths = files.map((file) => normalizePath(file.path));
-  const allContent = files.map((file) => file.content || "").join("\n").toLowerCase();
+  const allContent = files
+    .map((file) => file.content || "")
+    .join("\n")
+    .toLowerCase();
 
   return {
     paths,
@@ -62,7 +65,7 @@ function scoreArchitecture(signals: Signals) {
       hasPath(signals, "/package.json") * 12 +
       hasAnyPath(signals, ["/vite.config.ts", "/vite.config.js", "/next.config.js"]) * 10 +
       hasAnyPath(signals, ["/src/main.tsx", "/src/main.jsx", "/app/page.tsx"]) * 10 +
-      hasAnyPath(signals, ["/src/app.tsx", "/src/app.jsx", "/src/App.tsx"]) * 8 +
+      hasAnyPath(signals, ["/src/App.tsx", "/src/App.jsx"]) * 8 +
       countFolder(signals, "/components/") * 4 +
       countFolder(signals, "/lib/") * 5 +
       countFolder(signals, "/hooks/") * 4 +
@@ -149,8 +152,8 @@ function scoreReliability(signals: Signals) {
 
   return clamp(
     25 +
-      Boolean(scripts.build) * 15 +
-      Boolean(scripts.dev) * 10 +
+      Number(Boolean(scripts.build)) * 15 +
+      Number(Boolean(scripts.dev)) * 10 +
       hasText(signals, ["try", "catch", "finally"]) * 20 +
       hasText(signals, ["errorboundary", "fallback", "error state", "empty state"]) * 20 +
       hasPath(signals, "/.env.example") * 10 +
@@ -186,7 +189,9 @@ function countFolder(signals: Signals, folder: string) {
 }
 
 function hasText(signals: Signals, keywords: string[]) {
-  return Number(keywords.some((keyword) => signals.allContent.includes(keyword.toLowerCase())));
+  return Number(
+    keywords.some((keyword) => signals.allContent.includes(keyword.toLowerCase()))
+  );
 }
 
 function clamp(value: number) {
