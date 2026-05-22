@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 import type { BuildIssue } from "../sandbox/errorParser";
 
@@ -32,16 +32,14 @@ export type ProjectMemory = {
 
 const MEMORY_DIR = path.join(process.cwd(), ".forge-memory");
 
-export async function loadProjectMemory(
-  projectId: string
-): Promise<ProjectMemory> {
+export async function loadProjectMemory(projectId: string): Promise<ProjectMemory> {
   await mkdir(MEMORY_DIR, { recursive: true });
 
   const filePath = getMemoryPath(projectId);
 
   try {
     const raw = await readFile(filePath, "utf8");
-    return JSON.parse(raw);
+    return JSON.parse(raw) as ProjectMemory;
   } catch {
     return createEmptyMemory(projectId);
   }
@@ -61,6 +59,42 @@ export async function saveProjectMemory(memory: ProjectMemory) {
   return memory;
 }
 
+export async function resetProjectMemory(projectId: string) {
+  const filePath = getMemoryPath(projectId);
+
+  await rm(filePath, {
+    force: true,
+  });
+
+  return createEmptyMemory(projectId);
+}
+
+export async function registerProjectProfile(params: {
+  memory: ProjectMemory;
+  framework?: string;
+  language?: string;
+  preferredLibraries?: string[];
+}) {
+  if (params.framework) {
+    params.memory.framework = params.framework;
+  }
+
+  if (params.language) {
+    params.memory.language = params.language;
+  }
+
+  if (params.preferredLibraries?.length) {
+    params.memory.preferredLibraries = unique([
+      ...params.preferredLibraries,
+      ...params.memory.preferredLibraries,
+    ]).slice(0, 50);
+  }
+
+  await saveProjectMemory(params.memory);
+
+  return params.memory;
+}
+
 export async function registerBuildResult(params: {
   memory: ProjectMemory;
   success: boolean;
@@ -77,7 +111,7 @@ export async function registerBuildResult(params: {
   if (!params.success) {
     const recurring = params.issues
       .map((issue) => simplifyIssue(issue))
-      .filter(Boolean);
+      .filter(Boolean) as string[];
 
     params.memory.recurringProblems = unique([
       ...recurring,
@@ -90,14 +124,8 @@ export async function registerBuildResult(params: {
   return params.memory;
 }
 
-export async function registerSuccessfulFix(
-  memory: ProjectMemory,
-  fix: string
-) {
-  memory.successfulFixes = unique([
-    fix,
-    ...memory.successfulFixes,
-  ]).slice(0, 40);
+export async function registerSuccessfulFix(memory: ProjectMemory, fix: string) {
+  memory.successfulFixes = unique([fix, ...memory.successfulFixes]).slice(0, 40);
 
   await saveProjectMemory(memory);
 
@@ -220,4 +248,4 @@ function createEmptyMemory(projectId: string): ProjectMemory {
 
 function unique<T>(items: T[]) {
   return Array.from(new Set(items));
-    }
+  }
