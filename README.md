@@ -1,20 +1,52 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Forge AI App Builder
 
-# Run and deploy your AI Studio app
+Forge is a local AI app builder that generates, improves, repairs, previews, scores and exports production-ready application projects.
 
-This contains everything you need to run your app locally.
+It works like a lightweight local alternative to tools such as Bolt, Lovable or v0.
 
-View your app in AI Studio: https://ai.studio/apps/cb30aa8d-7fd4-4fef-af0d-125be8947f90
+## Features
 
-## Run Locally
+- AI app generation from prompt
+- Multi-agent orchestration
+- Planner, reviewer, coder and debugger agents
+- Gemini support
+- OpenAI-compatible provider support
+- Project templates
+- File explorer
+- Code viewer
+- Manual file editor
+- Static preview
+- Real Vite preview
+- Virtual build check
+- Real npm build check
+- Automatic dependency resolver
+- Automatic build repair loop
+- Project scoring
+- Publish readiness report
+- Deployment pack generator
+- ZIP export
+- Local project history
+- Autopilot improvement mode
 
-**Prerequisites:**  Node.js
+## Stack
 
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Express
+- Gemini API
+- OpenAI-compatible API support
+- JSZip
+- React Syntax Highlighter
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Requirements
+
+- Node.js 20+
+- npm
+- Gemini API key or OpenAI-compatible API key
+
+## Installation
+
+```bash
+npm install
