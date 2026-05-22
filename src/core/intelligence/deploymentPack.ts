@@ -1,51 +1,43 @@
 import type { VirtualFile } from "../engine/types";
+import { inspectProject } from "./projectInspector";
 
 export function createDeploymentPack(files: VirtualFile[]): VirtualFile[] {
-  const existing = new Set(files.map((f) => normalize(f.path)));
+  const existing = new Set(files.map((file) => normalize(file.path)));
+  const inspection = inspectProject(files);
   const additions: VirtualFile[] = [];
 
   if (!existing.has("/README.md")) {
     additions.push({
       path: "/README.md",
-      content: createReadme(files),
+      content: createReadme(files, inspection),
     });
   }
 
   if (!existing.has("/.env.example")) {
     additions.push({
       path: "/.env.example",
-      content: createEnvExample(),
+      content: createEnvExample(inspection.framework),
     });
   }
 
   if (!existing.has("/vercel.json")) {
     additions.push({
       path: "/vercel.json",
-      content: JSON.stringify(
-        {
-          buildCommand: "npm run build",
-          outputDirectory: "dist",
-          installCommand: "npm install",
-          framework: "vite",
-          rewrites: [{ source: "/(.*)", destination: "/" }],
-        },
-        null,
-        2
-      ),
+      content: JSON.stringify(createVercelConfig(inspection.framework), null, 2),
     });
   }
 
   if (!existing.has("/Dockerfile")) {
     additions.push({
       path: "/Dockerfile",
-      content: createDockerfile(),
+      content: createDockerfile(inspection.framework),
     });
   }
 
   if (!existing.has("/.github/workflows/deploy.yml")) {
     additions.push({
       path: "/.github/workflows/deploy.yml",
-      content: createGithubWorkflow(),
+      content: createGithubWorkflow(inspection.packageManager),
     });
   }
 
@@ -70,48 +62,63 @@ function normalize(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function createReadme(files: VirtualFile[]) {
-  const hasVite = files.some((f) => normalize(f.path).includes("vite.config"));
+function getProjectName(files: VirtualFile[]) {
+  const packageFile = files.find((file) => normalize(file.path) === "/package.json");
 
-  return `# Forge Generated App
+  if (!packageFile?.content) return "Forge Generated App";
 
-Production-ready app generated with Forge AI App Builder.
+  try {
+    const json = JSON.parse(packageFile.content);
+    return json.name || "Forge Generated App";
+  } catch {
+    return "Forge Generated App";
+  }
+}
+
+function createReadme(files: VirtualFile[], inspection: ReturnType<typeof inspectProject>) {
+  const name = getProjectName(files);
+
+  return `# ${name}
+
+Production-ready application generated with Forge AI App Builder.
 
 ## Stack
 
-- React
-- TypeScript
-- ${hasVite ? "Vite" : "Modern frontend build system"}
-- Tailwind CSS
+- Framework: ${inspection.framework}
+- Language: ${inspection.language}
+- Package manager: ${inspection.packageManager}
 
 ## Install
 
 \`\`\`bash
-npm install
+${inspection.packageManager} install
 \`\`\`
 
 ## Development
 
 \`\`\`bash
-npm run dev
+${runCommand(inspection.packageManager, "dev")}
 \`\`\`
 
 ## Production build
 
 \`\`\`bash
-npm run build
-npm run preview
+${runCommand(inspection.packageManager, "build")}
+\`\`\`
+
+## Preview
+
+\`\`\`bash
+${runCommand(inspection.packageManager, "preview")}
 \`\`\`
 
 ## Deploy on Vercel
 
-This project includes a \`vercel.json\` file.
-
 Recommended settings:
 
-- Build command: \`npm run build\`
-- Output directory: \`dist\`
-- Install command: \`npm install\`
+- Build command: \`${runCommand(inspection.packageManager, "build")}\`
+- Output directory: \`${getOutputDirectory(inspection.framework)}\`
+- Install command: \`${inspection.packageManager} install\`
 
 ## Environment
 
@@ -125,17 +132,58 @@ Then fill the required values.
 `;
 }
 
-function createEnvExample() {
-  return `# App
-VITE_APP_NAME="Forge Generated App"
-VITE_PUBLIC_SITE_URL="https://example.com"
+function createEnvExample(framework: string) {
+  if (framework === "Next.js") {
+    return `NEXT_PUBLIC_APP_NAME="Forge Generated App"
+NEXT_PUBLIC_SITE_URL="https://example.com"
+NEXT_PUBLIC_API_BASE_URL=""
+`;
+  }
 
-# Optional API keys
+  return `VITE_APP_NAME="Forge Generated App"
+VITE_PUBLIC_SITE_URL="https://example.com"
 VITE_API_BASE_URL=""
 `;
 }
 
-function createDockerfile() {
+function createVercelConfig(framework: string) {
+  if (framework === "Next.js") {
+    return {
+      framework: "nextjs",
+    };
+  }
+
+  return {
+    buildCommand: "npm run build",
+    outputDirectory: getOutputDirectory(framework),
+    installCommand: "npm install",
+    framework: "vite",
+    rewrites: [{ source: "/(.*)", destination: "/" }],
+  };
+}
+
+function createDockerfile(framework: string) {
+  if (framework === "Next.js") {
+    return `FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app ./
+EXPOSE 3000
+CMD ["npm", "start"]
+`;
+  }
+
   return `FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
@@ -148,13 +196,13 @@ COPY . .
 RUN npm run build
 
 FROM nginx:alpine AS runner
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/${getOutputDirectory(framework)} /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 `;
 }
 
-function createGithubWorkflow() {
+function createGithubWorkflow(packageManager: string) {
   return `name: Build
 
 on:
@@ -178,10 +226,10 @@ jobs:
           node-version: 20
 
       - name: Install
-        run: npm install
+        run: ${packageManager} install
 
       - name: Build
-        run: npm run build
+        run: ${runCommand(packageManager, "build")}
 `;
 }
 
@@ -195,3 +243,15 @@ function createSitemap() {
 </urlset>
 `;
 }
+
+function getOutputDirectory(framework: string) {
+  if (framework === "Next.js") return ".next";
+  if (framework === "Astro") return "dist";
+  return "dist";
+}
+
+function runCommand(packageManager: string, script: string) {
+  if (packageManager === "yarn") return `yarn ${script}`;
+  if (packageManager === "pnpm") return `pnpm ${script}`;
+  return `npm run ${script}`;
+                   }
