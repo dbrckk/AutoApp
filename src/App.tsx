@@ -1,31 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
-import { motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ActionQueuePanel } from "./components/ActionQueuePanel";
-import { AutopilotPanel } from "./components/AutopilotPanel";
-import { BuildPanel } from "./components/BuildPanel";
-import { CodeViewer } from "./components/CodeViewer";
-import { DependencyPanel } from "./components/DependencyPanel";
-import { DeploymentPanel } from "./components/DeploymentPanel";
-import { FileEditorPanel } from "./components/FileEditorPanel";
 import { FileTree } from "./components/FileTree";
-import { InspectionPanel } from "./components/InspectionPanel";
-import { JobPanel } from "./components/JobPanel";
+import { CodeEditor } from "./components/CodeEditor";
 import { PreviewPanel } from "./components/PreviewPanel";
-import { PublishPanel } from "./components/PublishPanel";
-import { RealPreviewPanel } from "./components/RealPreviewPanel";
 import { ScorePanel } from "./components/ScorePanel";
-import { TemplatesPanel } from "./components/TemplatesPanel";
+import { MemoryPanel } from "./components/MemoryPanel";
+import { ProjectHealthPanel } from "./components/ProjectHealthPanel";
 
 import {
+  applyTemplate,
   checkBuild,
   createDeploymentPack,
   createPublishReport,
   generateProject,
   getJob,
   getPreview,
+  getProjectMemory,
   inspectProject,
+  listTemplates,
+  resetProjectMemory,
   resolveDependencies,
+  scoreProject,
+  startAutopilotJob,
   startGenerationJob,
   startPreview,
   stopPreview,
@@ -33,13 +29,32 @@ import {
   type BuildMode,
 } from "./lib/api";
 
-import { downloadZip } from "./lib/zip";
-import type { GenerationResponse, Project, VirtualFile } from "./types";
+import {
+  exportProjectAsJson,
+  readProjectJsonFile,
+} from "./lib/projectIO";
+
+import {
+  downloadZip,
+} from "./lib/zip";
+
+import type {
+  Commit,
+  GenerationResponse,
+  Project,
+  VirtualFile,
+} from "./types";
 
 const STORAGE_KEY = "forge.projects.v2";
+const BACKUP_STORAGE_KEY = "forge.projects.v2.backup";
+
+const MAX_LOCAL_STORAGE_CHARS = 4_500_000;
+const MAX_PROJECTS_STORED = 8;
+const MAX_COMMITS_PER_PROJECT = 25;
+const MAX_FILE_CONTENT_CHARS_IN_HISTORY = 120_000;
 
 function uid() {
-  return crypto.randomUUID();
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 function now() {
@@ -47,21 +62,40 @@ function now() {
 }
 
 function normalizePath(path: string) {
-  if (!path) return "/";
-  return path.startsWith("/") ? path : `/${path}`;
+  if (!path.startsWith("/")) {
+    return `/${path}`;
+  }
+
+  return path;
 }
 
-function mergeFiles(currentFiles: VirtualFile[], generatedFiles: VirtualFile[]) {
+function createEmptyProject(prompt = ""): Project {
+  return {
+    id: uid(),
+    name: "Untitled Project",
+    prompt,
+    files: [],
+    createdAt: now(),
+    updatedAt: now(),
+    commits: [],
+    nextActions: [],
+  };
+}
+
+function mergeFiles(
+  currentFiles: VirtualFile[],
+  changedFiles: VirtualFile[]
+) {
   const map = new Map<string, VirtualFile>();
 
-  for (const file of currentFiles || []) {
+  for (const file of currentFiles) {
     map.set(normalizePath(file.path), {
       path: normalizePath(file.path),
       content: file.content,
     });
   }
 
-  for (const file of generatedFiles || []) {
+  for (const file of changedFiles) {
     const path = normalizePath(file.path);
 
     if (file.content === null) {
@@ -75,214 +109,620 @@ function mergeFiles(currentFiles: VirtualFile[], generatedFiles: VirtualFile[]) 
     });
   }
 
-  return Array.from(map.values()).sort((a, b) => a.path.localeCompare(b.path));
+  return Array.from(map.values()).sort((a, b) =>
+    a.path.localeCompare(b.path)
+  );
 }
 
-function createEmptyProject(prompt = ""): Project {
-  return {
-    id: uid(),
-    name: prompt.trim().slice(0, 42) || "Untitled App",
-    prompt,
-    files: [],
-    commits: [],
-    createdAt: now(),
-    updatedAt: now(),
-    nextActions: [],
-  };
+function compactProjectsForStorage(projects: Project[]) {
+  return projects
+    .slice(0, MAX_PROJECTS_STORED)
+    .map((project) => ({
+      ...project,
+      commits: (project.commits || [])
+        .slice(0, MAX_COMMITS_PER_PROJECT)
+        .map((commit) => ({
+          ...commit,
+          files: (commit.files || []).map((file) => ({
+            ...file,
+            content:
+              file.content &&
+              file.content.length >
+                MAX_FILE_CONTENT_CHARS_IN_HISTORY
+                ? file.content.slice(
+                    0,
+                    MAX_FILE_CONTENT_CHARS_IN_HISTORY
+                  ) + "\n/* HISTORY FILE TRUNCATED */"
+                : file.content,
+          })),
+        })),
+    }));
 }
 
-function safeLoadProjects(): Project[] {
+function measureStoragePayload(projects: Project[]) {
+  return JSON.stringify(projects).length;
+}
+
+function safeLoadBackupProjects(): Project[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(
+      BACKUP_STORAGE_KEY
+    );
+
     if (!raw) return [];
 
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
   } catch {
     return [];
   }
 }
 
+function safeLoadProjects(): Project[] {
+  try {
+    const raw = localStorage.getItem(
+      STORAGE_KEY
+    );
+
+    if (!raw) {
+      return safeLoadBackupProjects();
+    }
+
+    const parsed = JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : safeLoadBackupProjects();
+  } catch {
+    return safeLoadBackupProjects();
+  }
+}
+
 function safeSaveProjects(projects: Project[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  let safeProjects =
+    compactProjectsForStorage(projects);
+
+  let payload = JSON.stringify(safeProjects);
+
+  while (
+    payload.length >
+      MAX_LOCAL_STORAGE_CHARS &&
+    safeProjects.length > 1
+  ) {
+    safeProjects = safeProjects.slice(0, -1);
+    payload = JSON.stringify(safeProjects);
+  }
+
+  if (
+    payload.length >
+    MAX_LOCAL_STORAGE_CHARS
+  ) {
+    safeProjects = safeProjects.map(
+      (project) => ({
+        ...project,
+        commits: [],
+      })
+    );
+
+    payload = JSON.stringify(safeProjects);
+  }
+
+  localStorage.setItem(
+    BACKUP_STORAGE_KEY,
+    payload
+  );
+
+  localStorage.setItem(
+    STORAGE_KEY,
+    payload
+  );
 }
 
 export default function App() {
-  const [projects, setProjects] = useState<Project[]>(() => safeLoadProjects());
-  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
-    const loaded = safeLoadProjects();
-    return loaded[0]?.id || "";
-  });
-
-  const [prompt, setPrompt] = useState("");
-  const [selectedPath, setSelectedPath] = useState("");
-  const [newFilePath, setNewFilePath] = useState("");
-
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isAutoImprove, setIsAutoImprove] = useState(false);
-  const [buildMode, setBuildMode] = useState<BuildMode>("virtual");
-  const [buildResult, setBuildResult] = useState<any>(null);
-  const [isCheckingBuild, setIsCheckingBuild] = useState(false);
-
-  const [error, setError] = useState("");
-  const [lastResponse, setLastResponse] = useState<GenerationResponse | null>(null);
-
-  const [inspection, setInspection] = useState<any>(null);
-  const [isInspecting, setIsInspecting] = useState(false);
-
-  const [dependencyResolution, setDependencyResolution] = useState<any>(null);
-  const [isResolvingDependencies, setIsResolvingDependencies] = useState(false);
-
-  const [isCreatingDeploymentPack, setIsCreatingDeploymentPack] = useState(false);
-
-  const [publishReport, setPublishReport] = useState<any>(null);
-  const [isCreatingPublishReport, setIsCreatingPublishReport] = useState(false);
-
-  const [generationJob, setGenerationJob] = useState<any>(null);
-  const [activeJobId, setActiveJobId] = useState("");
-
-  const [previewSession, setPreviewSession] = useState<any>(null);
-  const [isStartingPreview, setIsStartingPreview] = useState(false);
-
-  const [isAutopilotRunning, setIsAutopilotRunning] = useState(false);
-  const [autopilotStopRequested, setAutopilotStopRequested] = useState(false);
-  const [autopilotTargetScore, setAutopilotTargetScore] = useState(90);
-  const [autopilotMaxIterations, setAutopilotMaxIterations] = useState(5);
-  const [autopilotLogs, setAutopilotLogs] = useState<string[]>([]);
-
-  const [aiConfig, setAiConfig] = useState<AiConfig>(() => ({
-    provider: localStorage.getItem("forge.ai.provider") || "gemini",
-    apiKey: localStorage.getItem("forge.ai.apiKey") || "",
-    baseUrl: localStorage.getItem("forge.ai.baseUrl") || "",
-    model: localStorage.getItem("forge.ai.model") || "",
-  }));
-
-  const activeProject = useMemo(
-    () => projects.find((project) => project.id === activeProjectId) || projects[0],
-    [projects, activeProjectId]
+  const [projects, setProjects] = useState<Project[]>(
+    () => safeLoadProjects()
   );
 
-  const selectedFile = useMemo(() => {
-    if (!activeProject) return undefined;
+  const [activeProjectId, setActiveProjectId] =
+    useState<string>(
+      () => safeLoadProjects()?.[0]?.id || ""
+    );
 
-    return activeProject.files.find(
-      (file) => normalizePath(file.path) === normalizePath(selectedPath)
+  const [selectedPath, setSelectedPath] =
+    useState("");
+
+  const [prompt, setPrompt] = useState("");
+
+  const [error, setError] = useState("");
+
+  const [isGenerating, setIsGenerating] =
+    useState(false);
+
+  const [
+    isAutopilotRunning,
+    setIsAutopilotRunning,
+  ] = useState(false);
+
+  const [
+    autopilotStopRequested,
+    setAutopilotStopRequested,
+  ] = useState(false);
+
+  const [autopilotLogs, setAutopilotLogs] =
+    useState<string[]>([]);
+
+  const [activeJobId, setActiveJobId] =
+    useState("");
+
+  const [generationJob, setGenerationJob] =
+    useState<any>(null);
+
+  const [buildResult, setBuildResult] =
+    useState<any>(null);
+
+  const [inspection, setInspection] =
+    useState<any>(null);
+
+  const [
+    dependencyResolution,
+    setDependencyResolution,
+  ] = useState<any>(null);
+
+  const [publishReport, setPublishReport] =
+    useState<any>(null);
+
+  const [previewSession, setPreviewSession] =
+    useState<any>(null);
+
+  const [previewInfo, setPreviewInfo] =
+    useState<any>(null);
+
+  const [lastResponse, setLastResponse] =
+    useState<GenerationResponse | null>(
+      null
+    );
+
+  const [templates, setTemplates] = useState<
+    any[]
+  >([]);
+
+  const [projectMemory, setProjectMemory] =
+    useState<any>(null);
+
+  const [isLoadingMemory, setIsLoadingMemory] =
+    useState(false);
+
+  const [buildMode, setBuildMode] =
+    useState<BuildMode>("virtual");
+
+  const [
+    autopilotTargetScore,
+    setAutopilotTargetScore,
+  ] = useState(90);
+
+  const [
+    autopilotMaxIterations,
+    setAutopilotMaxIterations,
+  ] = useState(5);
+
+  const [aiConfig, setAiConfig] =
+    useState<AiConfig>({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    });
+
+  const previewPollRef =
+    useRef<number>();
+
+  const activeProject = useMemo(
+    () =>
+      projects.find(
+        (project) =>
+          project.id === activeProjectId
+      ) || null,
+    [projects, activeProjectId]
+  );
+  const storageSize = useMemo(() => {
+    try {
+      return measureStoragePayload(projects);
+    } catch {
+      return 0;
+    }
+  }, [projects]);
+
+  const selectedFile = useMemo(() => {
+    if (!activeProject) return null;
+
+    return (
+      activeProject.files.find(
+        (file) =>
+          normalizePath(file.path) ===
+          normalizePath(selectedPath)
+      ) || null
     );
   }, [activeProject, selectedPath]);
 
-useEffect(() => {
+  useEffect(() => {
     safeSaveProjects(projects);
   }, [projects]);
 
   useEffect(() => {
-    if (!activeProject && projects.length > 0) {
-      setActiveProjectId(projects[0].id);
-    }
-  }, [activeProject, projects]);
-
-  useEffect(() => {
-    localStorage.setItem("forge.ai.provider", aiConfig.provider || "");
-    localStorage.setItem("forge.ai.apiKey", aiConfig.apiKey || "");
-    localStorage.setItem("forge.ai.baseUrl", aiConfig.baseUrl || "");
-    localStorage.setItem("forge.ai.model", aiConfig.model || "");
-  }, [aiConfig]);
-
-  useEffect(() => {
-    if (!selectedPath && activeProject?.files?.length) {
-      setSelectedPath(activeProject.files[0].path);
-    }
-  }, [activeProject, selectedPath]);
+    listTemplates()
+      .then(setTemplates)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!activeJobId) return;
 
-    let alive = true;
+    const interval = window.setInterval(
+      async () => {
+        try {
+          const job = await getJob(
+            activeJobId
+          );
 
-    const timer = window.setInterval(async () => {
-      try {
-        const job = await getJob(activeJobId);
-        if (!alive) return;
+          setGenerationJob(job);
 
-        setGenerationJob(job);
+          if (
+            job.logs?.length
+          ) {
+            setAutopilotLogs(
+              job.logs
+            );
+          }
 
-        if (job.status === "success" && job.result) {
-          const baseProject = activeProject || createEmptyProject(prompt);
-          const response = job.result as GenerationResponse;
-          const merged = mergeFiles(baseProject.files || [], response.files || []);
+          if (
+            job.status === "success" &&
+            job.result
+          ) {
+            const baseProject =
+              activeProject ||
+              createEmptyProject(
+                prompt
+              );
 
-          updateProject({
-            ...baseProject,
-            prompt,
-            files: merged,
-            updatedAt: now(),
-            score: response.score,
-            nextActions: response.nextActions || [],
-            commits: [
-              {
-                id: uid(),
-                message: response.changelog || "AI generation job",
-                timestamp: now(),
-                files: response.files || [],
-                score: response.score,
-              },
-              ...(baseProject.commits || []),
-            ],
-          });
+            if (
+              job.result.iterations &&
+              job.result.files
+            ) {
+              const latestIteration =
+                job.result.iterations.at(
+                  -1
+                ) as
+                  | GenerationResponse
+                  | undefined;
 
-          setLastResponse(response);
-          setSelectedPath(response.files?.[0]?.path || merged[0]?.path || "");
-          setIsGenerating(false);
-          setActiveJobId("");
+              updateProject({
+                ...baseProject,
+                prompt,
+                files:
+                  job.result.files,
+                updatedAt: now(),
+                score:
+                  latestIteration?.score,
+                nextActions:
+                  latestIteration?.nextActions ||
+                  [],
+                commits: [
+                  {
+                    id: uid(),
+                    message: `Autopilot completed. Final score: ${job.result.finalScore}`,
+                    timestamp:
+                      now(),
+                    files:
+                      job.result.files,
+                    score:
+                      latestIteration?.score,
+                  },
+                  ...(baseProject.commits ||
+                    []),
+                ],
+              });
+
+              setLastResponse(
+                latestIteration || {
+                  files:
+                    job.result.files,
+                  changelog: `Autopilot completed. Final score: ${job.result.finalScore}`,
+                  estimatedTimeSaved:
+                    "Several hours saved.",
+                  score:
+                    latestIteration?.score,
+                  nextActions:
+                    latestIteration?.nextActions ||
+                    [],
+                  mode:
+                    "improve",
+                }
+              );
+
+              setAutopilotLogs(
+                job.result.logs ||
+                  []
+              );
+
+              setIsAutopilotRunning(
+                false
+              );
+
+              setSelectedPath(
+                job.result.files?.[0]
+                  ?.path || ""
+              );
+            } else {
+              const response =
+                job.result as GenerationResponse;
+
+              const merged =
+                mergeFiles(
+                  baseProject.files ||
+                    [],
+                  response.files ||
+                    []
+                );
+
+              updateProject({
+                ...baseProject,
+                prompt,
+                files: merged,
+                updatedAt: now(),
+                score:
+                  response.score,
+                nextActions:
+                  response.nextActions ||
+                  [],
+                commits: [
+                  {
+                    id: uid(),
+                    message:
+                      response.changelog ||
+                      "AI generation job",
+                    timestamp:
+                      now(),
+                    files:
+                      response.files ||
+                      [],
+                    score:
+                      response.score,
+                  },
+                  ...(baseProject.commits ||
+                    []),
+                ],
+              });
+
+              setLastResponse(
+                response
+              );
+
+              setSelectedPath(
+                response.files?.[0]
+                  ?.path ||
+                  merged[0]
+                    ?.path ||
+                  ""
+              );
+            }
+
+            setIsGenerating(
+              false
+            );
+
+            setActiveJobId("");
+
+            clearInterval(
+              interval
+            );
+          }
+
+          if (
+            job.status === "error"
+          ) {
+            setError(
+              job.error ||
+                "Job failed."
+            );
+
+            setIsGenerating(
+              false
+            );
+
+            setIsAutopilotRunning(
+              false
+            );
+
+            setActiveJobId("");
+
+            clearInterval(
+              interval
+            );
+          }
+        } catch {
+          clearInterval(
+            interval
+          );
         }
+      },
+      2000
+    );
 
-        if (job.status === "error") {
-          setError(job.error || "Generation job failed.");
-          setIsGenerating(false);
-          setActiveJobId("");
-        }
-      } catch (err: any) {
-        setError(err?.message || "Job polling failed.");
-        setIsGenerating(false);
-        setActiveJobId("");
-      }
-    }, 1500);
-
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, [activeJobId, activeProject, prompt]);
+    return () =>
+      clearInterval(interval);
+  }, [
+    activeJobId,
+    activeProject,
+    prompt,
+  ]);
 
   useEffect(() => {
-    if (!previewSession?.id) return;
-    if (previewSession.status === "stopped") return;
-    if (previewSession.status === "error") return;
+    if (
+      !previewSession?.id
+    ) {
+      return;
+    }
 
-    let alive = true;
+    previewPollRef.current =
+      window.setInterval(
+        async () => {
+          try {
+            const session =
+              await getPreview(
+                previewSession.id
+              );
 
-    const timer = window.setInterval(async () => {
-      try {
-        const session = await getPreview(previewSession.id);
-        if (alive) setPreviewSession(session);
-      } catch {
-        // Ignore temporary preview polling errors.
-      }
-    }, 1500);
+            setPreviewInfo(
+              session
+            );
+          } catch {}
+        },
+        2000
+      );
 
     return () => {
-      alive = false;
-      window.clearInterval(timer);
+      if (
+        previewPollRef.current
+      ) {
+        clearInterval(
+          previewPollRef.current
+        );
+      }
     };
-  }, [previewSession?.id, previewSession?.status]);
+  }, [previewSession]);
 
-  function updateProject(project: Project) {
-    setProjects((prev) => {
-      const exists = prev.some((p) => p.id === project.id);
-      if (!exists) return [project, ...prev];
-      return prev.map((p) => (p.id === project.id ? project : p));
+  function pushAutopilotLog(
+    message: string
+  ) {
+    setAutopilotLogs(
+      (previous) => [
+        `${new Date().toISOString()} · ${message}`,
+        ...previous,
+      ]
+    );
+  }
+
+  function updateProject(
+    project: Project
+  ) {
+    setProjects(
+      (previous) => {
+        const exists =
+          previous.some(
+            (item) =>
+              item.id ===
+              project.id
+          );
+
+        if (!exists) {
+          return [
+            project,
+            ...previous,
+          ];
+        }
+
+        return previous.map(
+          (item) =>
+            item.id ===
+            project.id
+              ? project
+              : item
+        );
+      }
+    );
+
+    setActiveProjectId(
+      project.id
+    );
+  }
+
+  function recoverBackupProjects() {
+    const backup =
+      safeLoadBackupProjects();
+
+    if (!backup.length) {
+      setError(
+        "No backup found."
+      );
+
+      return;
+    }
+
+    setProjects(backup);
+
+    setActiveProjectId(
+      backup[0]?.id || ""
+    );
+
+    setSelectedPath(
+      backup[0]?.files?.[0]
+        ?.path || ""
+    );
+
+    setError("");
+  }
+
+  function updateFileContent(
+    path: string,
+    content: string
+  ) {
+    if (!activeProject)
+      return;
+
+    const updatedFiles =
+      activeProject.files.map(
+        (file) =>
+          normalizePath(
+            file.path
+          ) ===
+          normalizePath(path)
+            ? {
+                ...file,
+                content,
+              }
+            : file
+      );
+
+    updateProject({
+      ...activeProject,
+      files: updatedFiles,
+      updatedAt: now(),
     });
+  }
 
-    setActiveProjectId(project.id);
+  function createNewProject() {
+    const project =
+      createEmptyProject();
+
+    updateProject(project);
+
+    setSelectedPath("");
+    setPrompt("");
+    setLastResponse(null);
+    setBuildResult(null);
+    setInspection(null);
+    setDependencyResolution(
+      null
+    );
+    setPublishReport(null);
+    setPreviewSession(null);
+    setPreviewInfo(null);
+    setProjectMemory(null);
+    setError("");
+}
+
+function deleteProject(projectId: string) {
+    const filtered = projects.filter(
+      (project) => project.id !== projectId
+    );
+
+    setProjects(filtered);
+
+    if (activeProjectId === projectId) {
+      setActiveProjectId(filtered[0]?.id || "");
+      setSelectedPath(filtered[0]?.files?.[0]?.path || "");
+    }
   }
 
   function renameProject(name: string) {
@@ -290,7 +730,7 @@ useEffect(() => {
 
     updateProject({
       ...activeProject,
-      name: name.trim() || "Untitled App",
+      name,
       updatedAt: now(),
     });
   }
@@ -309,13 +749,13 @@ useEffect(() => {
     updateProject(copy);
   }
 
-  function restoreCommit(commitId: string) {
+  function restoreCommit(commit: Commit) {
     if (!activeProject) return;
 
-    const commit = activeProject.commits.find((item) => item.id === commitId);
-    if (!commit) return;
-
-    const restoredFiles = mergeFiles(activeProject.files, commit.files);
+    const restoredFiles = mergeFiles(
+      activeProject.files,
+      commit.files
+    );
 
     updateProject({
       ...activeProject,
@@ -324,7 +764,7 @@ useEffect(() => {
       commits: [
         {
           id: uid(),
-          message: `Restored commit: ${commit.message}`,
+          message: `Restored: ${commit.message}`,
           timestamp: now(),
           files: commit.files,
           score: commit.score,
@@ -334,7 +774,6 @@ useEffect(() => {
     });
 
     setSelectedPath(restoredFiles[0]?.path || "");
-    setBuildResult(null);
   }
 
   function compactHistory() {
@@ -342,13 +781,69 @@ useEffect(() => {
 
     updateProject({
       ...activeProject,
-      commits: activeProject.commits.slice(0, 20),
+      commits: activeProject.commits.slice(0, 10),
       updatedAt: now(),
     });
   }
 
-  async function handleGenerate(customPrompt?: string, auto = false) {
-    const finalPrompt = (customPrompt || prompt).trim();
+  function addFile() {
+    if (!activeProject) return;
+
+    const fileName = window.prompt(
+      "File path:",
+      "/src/new-file.ts"
+    );
+
+    if (!fileName) return;
+
+    const path = normalizePath(fileName);
+
+    if (
+      activeProject.files.some(
+        (file) => normalizePath(file.path) === path
+      )
+    ) {
+      setError("File already exists.");
+      return;
+    }
+
+    const updatedFiles = [
+      ...activeProject.files,
+      {
+        path,
+        content: "",
+      },
+    ].sort((a, b) => a.path.localeCompare(b.path));
+
+    updateProject({
+      ...activeProject,
+      files: updatedFiles,
+      updatedAt: now(),
+    });
+
+    setSelectedPath(path);
+  }
+
+  function deleteSelectedFile() {
+    if (!activeProject || !selectedFile) return;
+
+    const updatedFiles = activeProject.files.filter(
+      (file) =>
+        normalizePath(file.path) !==
+        normalizePath(selectedFile.path)
+    );
+
+    updateProject({
+      ...activeProject,
+      files: updatedFiles,
+      updatedAt: now(),
+    });
+
+    setSelectedPath(updatedFiles[0]?.path || "");
+  }
+
+  async function handleGenerate(auto = false) {
+    const finalPrompt = prompt.trim();
 
     if (!finalPrompt) {
       setError("Prompt required.");
@@ -357,25 +852,27 @@ useEffect(() => {
 
     setError("");
     setIsGenerating(true);
-    setLastResponse(null);
-    setBuildResult(null);
 
     try {
-      const baseProject = activeProject || createEmptyProject(finalPrompt);
+      const baseProject =
+        activeProject || createEmptyProject(finalPrompt);
 
       const response = await generateProject({
+        projectId: baseProject.id,
         prompt: finalPrompt,
-        currentFiles: baseProject.files || [],
+        currentFiles: baseProject.files,
         isAutoImprove: auto,
         aiConfig,
         buildMode,
       });
 
-      const merged = mergeFiles(baseProject.files || [], response.files || []);
+      const merged = mergeFiles(
+        baseProject.files,
+        response.files || []
+      );
 
-      const updatedProject: Project = {
+      updateProject({
         ...baseProject,
-        name: baseProject.name || finalPrompt.slice(0, 42) || "Generated App",
         prompt: finalPrompt,
         files: merged,
         updatedAt: now(),
@@ -384,16 +881,17 @@ useEffect(() => {
         commits: [
           {
             id: uid(),
-            message: response.changelog || "AI generation",
+            message:
+              response.changelog ||
+              "AI generation",
             timestamp: now(),
             files: response.files || [],
             score: response.score,
           },
-          ...(baseProject.commits || []),
+          ...baseProject.commits,
         ],
-      };
+      });
 
-      updateProject(updatedProject);
       setLastResponse(response);
       setSelectedPath(response.files?.[0]?.path || merged[0]?.path || "");
     } catch (err: any) {
@@ -403,8 +901,8 @@ useEffect(() => {
     }
   }
 
-  async function handleGenerateJob(customPrompt?: string, auto = false) {
-    const finalPrompt = (customPrompt || prompt).trim();
+  async function handleGenerateJob(auto = false) {
+    const finalPrompt = prompt.trim();
 
     if (!finalPrompt) {
       setError("Prompt required.");
@@ -413,16 +911,16 @@ useEffect(() => {
 
     setError("");
     setIsGenerating(true);
-    setLastResponse(null);
-    setBuildResult(null);
     setGenerationJob(null);
 
     try {
-      const baseProject = activeProject || createEmptyProject(finalPrompt);
+      const baseProject =
+        activeProject || createEmptyProject(finalPrompt);
 
       const jobId = await startGenerationJob({
+        projectId: baseProject.id,
         prompt: finalPrompt,
-        currentFiles: baseProject.files || [],
+        currentFiles: baseProject.files,
         isAutoImprove: auto,
         aiConfig,
         buildMode,
@@ -435,130 +933,113 @@ useEffect(() => {
     }
   }
 
-  async function handleAutoImprove() {
+  async function handleAutopilot() {
     if (!activeProject) {
       setError("Create a project first.");
       return;
     }
 
-    setIsAutoImprove(true);
+    setError("");
+    setAutopilotLogs([]);
+    setIsAutopilotRunning(true);
+    setAutopilotStopRequested(false);
 
     try {
-      const tasks = activeProject.nextActions?.length
-        ? activeProject.nextActions
-            .map((action, index) => `${index + 1}. ${action}`)
-            .join("\n")
-        : "Improve architecture, UI, mobile UX, SEO, accessibility, reliability, monetization, error states, performance and production readiness.";
+      const jobId = await startAutopilotJob({
+        projectId: activeProject.id,
+        prompt:
+          activeProject.prompt ||
+          prompt ||
+          "Improve this project until it is production-ready.",
+        files: activeProject.files,
+        aiConfig,
+        buildMode,
+        targetScore: autopilotTargetScore,
+        maxIterations: autopilotMaxIterations,
+      });
 
-      await handleGenerateJob(
-        [
-          "You are improving the current project to make it publish-ready.",
-          "",
-          "Priority tasks:",
-          tasks,
-          "",
-          "Hard requirements:",
-          "- preserve all existing features",
-          "- return complete changed files only",
-          "- fix weak structure",
-          "- improve mobile-first UX",
-          "- improve SEO and accessibility",
-          "- improve error handling",
-          "- keep dependencies consistent",
-          "- keep the app buildable",
-          "- remove placeholders when possible",
-        ].join("\n"),
-        true
-      );
-    } finally {
-      setIsAutoImprove(false);
+      setActiveJobId(jobId);
+      pushAutopilotLog(`Autopilot job started: ${jobId}`);
+    } catch (err: any) {
+      setError(err?.message || "Autopilot failed.");
+      setIsAutopilotRunning(false);
     }
-    }
+  }
 
-async function handleBuildCheck(mode: BuildMode) {
+  function stopAutopilot() {
+    setAutopilotStopRequested(true);
+    setIsAutopilotRunning(false);
+    pushAutopilotLog("Stop requested locally.");
+  }
+
+  async function runAction(action: string) {
+    setPrompt(action);
+    await handleGenerateJob(true);
+  }
+
+  async function runAllActions() {
+    if (!activeProject?.nextActions?.length) return;
+
+    setPrompt(activeProject.nextActions.join("\n"));
+    await handleGenerateJob(true);
+  }
+
+  async function handleBuildCheck() {
     if (!activeProject) return;
 
-    setIsCheckingBuild(true);
-    setBuildResult(null);
+    setError("");
 
     try {
       const result = await checkBuild({
         files: activeProject.files,
-        mode,
+        mode: buildMode,
       });
 
       setBuildResult(result);
     } catch (err: any) {
-      setBuildResult({
-        ok: false,
-        issues: [],
-        log: err?.message || "Build check failed.",
+      setError(err?.message || "Build check failed.");
+    }
+      }
+
+async function handleScoreProject() {
+    if (!activeProject) return;
+
+    try {
+      const score = await scoreProject(activeProject.files);
+
+      updateProject({
+        ...activeProject,
+        score,
+        updatedAt: now(),
       });
-    } finally {
-      setIsCheckingBuild(false);
+    } catch (err: any) {
+      setError(err?.message || "Score failed.");
     }
   }
 
   async function handleInspectProject() {
     if (!activeProject) return;
 
-    setIsInspecting(true);
-
     try {
       const result = await inspectProject(activeProject.files);
       setInspection(result);
     } catch (err: any) {
-      setInspection({
-        framework: "Unknown",
-        language: "Unknown",
-        packageManager: "npm",
-        entrypoints: [],
-        dependencies: [],
-        devDependencies: [],
-        missingCriticalFiles: [],
-        risks: [err?.message || "Inspection failed."],
-        strengths: [],
-      });
-    } finally {
-      setIsInspecting(false);
+      setError(err?.message || "Inspection failed.");
     }
   }
 
-  async function handleAnalyzeDependencies() {
+  async function handleResolveDependencies(apply = false) {
     if (!activeProject) return;
-
-    setIsResolvingDependencies(true);
 
     try {
       const result = await resolveDependencies({
         files: activeProject.files,
-        apply: false,
+        apply,
       });
 
       setDependencyResolution(result.resolution);
-    } catch (err: any) {
-      setDependencyResolution({
-        ok: false,
-        missingDependencies: [],
-        warnings: [err?.message || "Dependency analysis failed."],
-      });
-    } finally {
-      setIsResolvingDependencies(false);
-    }
-  }
 
-  async function handleApplyDependencyFix() {
-    if (!activeProject) return;
-
-    setIsResolvingDependencies(true);
-
-    try {
-      const result = await resolveDependencies({
-        files: activeProject.files,
-        apply: true,
-      });
-
-      if (result.files) {
+      if (apply && result.files) {
         updateProject({
           ...activeProject,
           files: result.files,
@@ -569,7 +1050,7 @@ async function handleBuildCheck(mode: BuildMode) {
               message: "Dependency resolver updated package.json",
               timestamp: now(),
               files: result.files.filter(
-                (file: VirtualFile) => normalizePath(file.path) === "/package.json"
+                (file) => normalizePath(file.path) === "/package.json"
               ),
               score: activeProject.score,
             },
@@ -577,24 +1058,13 @@ async function handleBuildCheck(mode: BuildMode) {
           ],
         });
       }
-
-      setDependencyResolution(result.resolution);
-      setBuildResult(null);
     } catch (err: any) {
-      setDependencyResolution({
-        ok: false,
-        missingDependencies: [],
-        warnings: [err?.message || "Dependency fix failed."],
-      });
-    } finally {
-      setIsResolvingDependencies(false);
+      setError(err?.message || "Dependency resolution failed.");
     }
   }
 
   async function handleCreateDeploymentPack() {
     if (!activeProject) return;
-
-    setIsCreatingDeploymentPack(true);
 
     try {
       const files = await createDeploymentPack(activeProject.files);
@@ -617,38 +1087,24 @@ async function handleBuildCheck(mode: BuildMode) {
       });
 
       setSelectedPath(files[0]?.path || selectedPath);
-      setBuildResult(null);
-    } finally {
-      setIsCreatingDeploymentPack(false);
+    } catch (err: any) {
+      setError(err?.message || "Deployment pack failed.");
     }
   }
 
   async function handleCreatePublishReport() {
     if (!activeProject) return;
 
-    setIsCreatingPublishReport(true);
-
     try {
       const report = await createPublishReport(activeProject.files);
       setPublishReport(report);
     } catch (err: any) {
-      setPublishReport({
-        ready: false,
-        score: 0,
-        blockers: [err?.message || "Publish report failed."],
-        warnings: [],
-        checklist: [],
-        commands: [],
-      });
-    } finally {
-      setIsCreatingPublishReport(false);
+      setError(err?.message || "Publish report failed.");
     }
   }
 
   async function handleStartPreview() {
     if (!activeProject?.files?.length) return;
-
-    setIsStartingPreview(true);
 
     try {
       if (previewSession?.id) {
@@ -657,369 +1113,229 @@ async function handleBuildCheck(mode: BuildMode) {
 
       const session = await startPreview(activeProject.files);
       setPreviewSession(session);
+      setPreviewInfo(session);
     } catch (err: any) {
-      setPreviewSession({
-        status: "error",
-        error: err?.message || "Preview failed.",
-        logs: [],
-      });
-    } finally {
-      setIsStartingPreview(false);
+      setError(err?.message || "Preview start failed.");
     }
   }
 
   async function handleStopPreview() {
     if (!previewSession?.id) return;
 
-    const session = await stopPreview(previewSession.id);
-    setPreviewSession(session);
-  }
-
-  function saveFile(path: string, content: string) {
-    if (!activeProject) return;
-
-    const normalized = normalizePath(path);
-
-    const updatedFiles = mergeFiles(activeProject.files, [
-      {
-        path: normalized,
-        content,
-      },
-    ]);
-
-    updateProject({
-      ...activeProject,
-      files: updatedFiles,
-      updatedAt: now(),
-      commits: [
-        {
-          id: uid(),
-          message: `Manual edit: ${normalized}`,
-          timestamp: now(),
-          files: [{ path: normalized, content }],
-          score: activeProject.score,
-        },
-        ...activeProject.commits,
-      ],
-    });
-
-    setSelectedPath(normalized);
-    setBuildResult(null);
-  }
-
-  function deleteFile(path: string) {
-    if (!activeProject) return;
-
-    const normalized = normalizePath(path);
-
-    const updatedFiles = mergeFiles(activeProject.files, [
-      {
-        path: normalized,
-        content: null,
-      },
-    ]);
-
-    updateProject({
-      ...activeProject,
-      files: updatedFiles,
-      updatedAt: now(),
-      commits: [
-        {
-          id: uid(),
-          message: `Deleted file: ${normalized}`,
-          timestamp: now(),
-          files: [{ path: normalized, content: null }],
-          score: activeProject.score,
-        },
-        ...activeProject.commits,
-      ],
-    });
-
-    setSelectedPath(updatedFiles[0]?.path || "");
-    setBuildResult(null);
-  }
-
-  function createFile() {
-    if (!activeProject) return;
-
-    const normalized = normalizePath(newFilePath.trim());
-    if (!normalized || normalized === "/") return;
-
-    saveFile(normalized, "");
-    setNewFilePath("");
-  }
-
-  function handleNewProject() {
-    const project = createEmptyProject("");
-
-    updateProject(project);
-    setPrompt("");
-    setSelectedPath("");
-    setNewFilePath("");
-    setBuildResult(null);
-    setLastResponse(null);
-    setInspection(null);
-    setDependencyResolution(null);
-    setPublishReport(null);
-    setError("");
-  }
-
-  function handleDeleteProject(id: string) {
-    setProjects((prev) => prev.filter((project) => project.id !== id));
-
-    if (activeProjectId === id) {
-      const nextProject = projects.find((project) => project.id !== id);
-      setActiveProjectId(nextProject?.id || "");
-      setSelectedPath("");
+    try {
+      const session = await stopPreview(previewSession.id);
+      setPreviewSession(session);
+      setPreviewInfo(session);
+    } catch (err: any) {
+      setError(err?.message || "Preview stop failed.");
     }
   }
 
-  function handleApplyTemplate(template: any) {
-    const project: Project = {
-      id: uid(),
-      name: template.name,
-      prompt: template.prompt,
-      files: template.files,
-      commits: [
-        {
-          id: uid(),
-          message: `Applied template: ${template.name}`,
-          timestamp: now(),
-          files: template.files,
-        },
-      ],
-      createdAt: now(),
-      updatedAt: now(),
-      nextActions: [],
-    };
-
-    updateProject(project);
-    setPrompt(template.prompt);
-    setSelectedPath(template.files[0]?.path || "");
-    setBuildResult(null);
-    setLastResponse(null);
-    setInspection(null);
-    setDependencyResolution(null);
-    setPublishReport(null);
-  }
-
-  async function handleExportZip() {
-    if (!activeProject) return;
-    await downloadZip(activeProject.files, activeProject.name || "forge-project");
-  }
-
-  function copySelectedFile() {
-    if (!selectedFile?.content) return;
-    navigator.clipboard.writeText(selectedFile.content);
-  }
-
-  async function runAction(action: string) {
+  async function handleLoadMemory() {
     if (!activeProject) return;
 
-    await handleGenerateJob(
-      [
-        "Apply this improvement task to the current project:",
-        action,
-        "",
-        "Rules:",
-        "- preserve existing features",
-        "- return complete changed files only",
-        "- improve production readiness",
-        "- keep the app buildable",
-      ].join("\n"),
-      true
-    );
-  }
-
-  async function runAllActions() {
-    if (!activeProject?.nextActions?.length) return;
-
-    await handleGenerateJob(
-      [
-        "Apply all these improvement tasks to the current project:",
-        ...activeProject.nextActions.map((action, index) => `${index + 1}. ${action}`),
-        "",
-        "Rules:",
-        "- preserve existing features",
-        "- return complete changed files only",
-        "- improve production readiness",
-        "- keep the app buildable",
-        "- prioritize high-impact fixes first",
-      ].join("\n"),
-      true
-    );
-  }
-
-  function pushAutopilotLog(message: string) {
-    setAutopilotLogs((prev) =>
-      [`${new Date().toLocaleTimeString()} · ${message}`, ...prev].slice(0, 50)
-    );
-  }
-
-  async function runAutopilot() {
-    if (!activeProject) {
-      setError("Create a project first.");
-      return;
-    }
-
-    setIsAutopilotRunning(true);
-    setAutopilotStopRequested(false);
-    setAutopilotLogs([]);
-
-    let currentProject = activeProject;
+    setIsLoadingMemory(true);
 
     try {
-      for (let iteration = 1; iteration <= autopilotMaxIterations; iteration++) {
-        if (autopilotStopRequested) {
-          pushAutopilotLog("Stopped by user.");
-          break;
-        }
-
-        const currentScore = currentProject.score?.total || 0;
-
-        if (currentScore >= autopilotTargetScore) {
-          pushAutopilotLog(`Target reached: ${currentScore}/${autopilotTargetScore}.`);
-          break;
-        }
-
-        pushAutopilotLog(
-          `Iteration ${iteration}/${autopilotMaxIterations} started. Current score: ${currentScore}.`
-        );
-
-        const tasks = currentProject.nextActions?.length
-          ? currentProject.nextActions
-              .map((action, index) => `${index + 1}. ${action}`)
-              .join("\n")
-          : "Improve UI, architecture, SEO, accessibility, reliability, mobile UX, performance and monetization.";
-
-        const response = await generateProject({
-          prompt: [
-            "Autopilot improvement iteration.",
-            "",
-            `Current score: ${currentScore}`,
-            `Target score: ${autopilotTargetScore}`,
-            "",
-            "Tasks:",
-            tasks,
-            "",
-            "Rules:",
-            "- preserve existing features",
-            "- fix build issues",
-            "- improve the lowest-scoring categories first",
-            "- return complete changed files only",
-            "- keep the project production-ready",
-          ].join("\n"),
-          currentFiles: currentProject.files,
-          isAutoImprove: true,
-          aiConfig,
-          buildMode,
-        });
-
-        const merged = mergeFiles(currentProject.files, response.files || []);
-
-        const updatedProject: Project = {
-          ...currentProject,
-          files: merged,
-          updatedAt: now(),
-          score: response.score,
-          nextActions: response.nextActions || [],
-          commits: [
-            {
-              id: uid(),
-              message: `Autopilot iteration ${iteration}: ${
-                response.changelog || "Improved project"
-              }`,
-              timestamp: now(),
-              files: response.files || [],
-              score: response.score,
-            },
-            ...currentProject.commits,
-          ],
-        };
-
-        currentProject = updatedProject;
-        updateProject(updatedProject);
-        setLastResponse(response);
-
-        pushAutopilotLog(
-          `Iteration ${iteration} complete. New score: ${response.score?.total ?? "unknown"}.`
-        );
-
-        if ((response.score?.total || 0) >= autopilotTargetScore) {
-          pushAutopilotLog(`Target reached: ${response.score?.total}/${autopilotTargetScore}.`);
-          break;
-        }
-      }
+      const memory = await getProjectMemory(activeProject.id);
+      setProjectMemory(memory);
     } catch (err: any) {
-      pushAutopilotLog(err?.message || "Autopilot failed.");
-      setError(err?.message || "Autopilot failed.");
+      setProjectMemory({
+        projectId: activeProject.id,
+        recurringProblems: [err?.message || "Memory load failed."],
+        successfulFixes: [],
+        architectureNotes: [],
+        buildHistory: [],
+      });
     } finally {
-      setIsAutopilotRunning(false);
+      setIsLoadingMemory(false);
     }
   }
 
-  function stopAutopilot() {
-    setAutopilotStopRequested(true);
-    pushAutopilotLog("Stop requested.");
-          }
+  async function handleResetMemory() {
+    if (!activeProject) return;
 
-return (
+    setIsLoadingMemory(true);
+
+    try {
+      const memory = await resetProjectMemory(activeProject.id);
+      setProjectMemory(memory);
+    } catch (err: any) {
+      setProjectMemory({
+        projectId: activeProject.id,
+        recurringProblems: [err?.message || "Memory reset failed."],
+        successfulFixes: [],
+        architectureNotes: [],
+        buildHistory: [],
+      });
+    } finally {
+      setIsLoadingMemory(false);
+    }
+  }
+
+  async function handleApplyTemplate(templateId: string) {
+    try {
+      const template = await applyTemplate(templateId);
+
+      const project: Project = {
+        id: uid(),
+        name: template.name,
+        prompt: template.prompt,
+        files: template.files,
+        commits: [
+          {
+            id: uid(),
+            message: `Applied template: ${template.name}`,
+            timestamp: now(),
+            files: template.files,
+          },
+        ],
+        createdAt: now(),
+        updatedAt: now(),
+        nextActions: [],
+      };
+
+      updateProject(project);
+      setPrompt(template.prompt);
+      setSelectedPath(template.files?.[0]?.path || "");
+      setLastResponse(null);
+      setBuildResult(null);
+      setInspection(null);
+      setDependencyResolution(null);
+      setPublishReport(null);
+      setProjectMemory(null);
+    } catch (err: any) {
+      setError(err?.message || "Template apply failed.");
+    }
+  }
+
+  function handleExportZip() {
+    if (!activeProject) return;
+    downloadZip(activeProject.files, activeProject.name || "forge-project");
+  }
+
+  function handleExportProjectJson() {
+    if (!activeProject) return;
+    exportProjectAsJson(activeProject);
+  }
+
+  async function handleImportProjectJson(file?: File | null) {
+    if (!file) return;
+
+    try {
+      const importedProject = await readProjectJsonFile(file);
+
+      updateProject({
+        ...importedProject,
+        id: importedProject.id || uid(),
+        updatedAt: now(),
+      });
+
+      setSelectedPath(importedProject.files?.[0]?.path || "");
+      setBuildResult(null);
+      setLastResponse(null);
+      setInspection(null);
+      setDependencyResolution(null);
+      setPublishReport(null);
+      setProjectMemory(null);
+      setError("");
+    } catch (err: any) {
+      setError(err?.message || "Project import failed.");
+    }
+  }
+
+  const healthScore = activeProject?.score;
+
+  return (
     <div className="min-h-screen bg-[#050505] text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.10),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
+      <div className="mx-auto flex min-h-screen max-w-[1800px] flex-col p-4">
+        <header className="mb-4 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">
+                Forge
+              </p>
 
-      <div className="relative mx-auto flex min-h-screen max-w-[1700px] flex-col p-4 lg:p-6">
-        <header className="mb-4 flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Forge</p>
+              <h1 className="text-3xl font-black tracking-tight">
+                AI App Builder
+              </h1>
 
-            <h1 className="text-2xl font-black tracking-tight text-white md:text-4xl">
-              AI App Builder
-            </h1>
+              <p className="mt-1 text-sm text-zinc-400">
+                Generate, repair, preview, score and export app projects.
+              </p>
 
-            <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-              Generate, improve, score, repair, preview, edit and export production-ready app projects.
-            </p>
+              {activeProject && (
+                <input
+                  value={activeProject.name}
+                  onChange={(event) => renameProject(event.target.value)}
+                  className="mt-3 w-full max-w-md rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
+                />
+              )}
 
-            {activeProject && (
-              <input
-                value={activeProject.name}
-                onChange={(event) => renameProject(event.target.value)}
-                className="mt-3 w-full max-w-md rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
-              />
-            )}
-          </div>
+              <p className="mt-2 text-[11px] text-zinc-600">
+                Local storage: {(storageSize / 1024 / 1024).toFixed(2)} MB
+              </p>
+            </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleNewProject}
-              className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/10"
-            >
-              New project
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={createNewProject}
+                className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10"
+              >
+                New
+              </button>
 
-            <button
-              onClick={duplicateProject}
-              disabled={!activeProject}
-              className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/10 disabled:opacity-40"
-            >
-              Duplicate
-            </button>
+              <button
+                onClick={duplicateProject}
+                disabled={!activeProject}
+                className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+              >
+                Duplicate
+              </button>
 
-            <button
-              onClick={handleExportZip}
-              disabled={!activeProject?.files?.length}
-              className="rounded-2xl bg-white px-4 py-2 text-xs font-bold text-black disabled:opacity-40"
-            >
-              Export ZIP
-            </button>
+              <button
+                onClick={recoverBackupProjects}
+                className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10"
+              >
+                Recover
+              </button>
+
+              <button
+                onClick={handleExportProjectJson}
+                disabled={!activeProject}
+                className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+              >
+                Export JSON
+              </button>
+
+              <label className="cursor-pointer rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10">
+                Import JSON
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(event) =>
+                    handleImportProjectJson(event.target.files?.[0])
+                  }
+                />
+              </label>
+
+              <button
+                onClick={handleExportZip}
+                disabled={!activeProject?.files?.length}
+                className="rounded-2xl bg-white px-4 py-2 text-xs font-black text-black disabled:opacity-40"
+              >
+                Export ZIP
+              </button>
+            </div>
           </div>
         </header>
 
-        <main className="grid flex-1 gap-4 lg:grid-cols-[290px_minmax(0,1fr)_400px]">
+        <main className="grid flex-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)_390px]">
           <aside className="space-y-4">
             <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Projects</h2>
+                <h2 className="text-sm font-bold">Projects</h2>
                 <span className="text-xs text-zinc-500">{projects.length}</span>
               </div>
 
@@ -1033,19 +1349,21 @@ return (
                 {projects.map((project) => (
                   <button
                     key={project.id}
+                    type="button"
                     onClick={() => {
                       setActiveProjectId(project.id);
-                      setSelectedPath(project.files[0]?.path || "");
-                      setBuildResult(null);
+                      setSelectedPath(project.files?.[0]?.path || "");
                       setLastResponse(null);
+                      setBuildResult(null);
                       setInspection(null);
                       setDependencyResolution(null);
                       setPublishReport(null);
+                      setProjectMemory(null);
                     }}
                     className={`w-full rounded-2xl border p-3 text-left transition ${
-                      activeProject?.id === project.id
+                      project.id === activeProject?.id
                         ? "border-white/30 bg-white/10"
-                        : "border-white/10 bg-black/20 hover:bg-white/5"
+                        : "border-white/10 bg-black/25 hover:bg-white/10"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -1059,7 +1377,7 @@ return (
                       <span
                         onClick={(event) => {
                           event.stopPropagation();
-                          handleDeleteProject(project.id);
+                          deleteProject(project.id);
                         }}
                         className="rounded-lg px-2 py-1 text-xs text-zinc-500 hover:bg-red-500/10 hover:text-red-300"
                       >
@@ -1071,10 +1389,48 @@ return (
               </div>
             </section>
 
-            <TemplatesPanel onApply={handleApplyTemplate} />
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+              <h2 className="mb-3 text-sm font-bold">Templates</h2>
+
+              <div className="space-y-2">
+                {templates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => handleApplyTemplate(template.id)}
+                    className="w-full rounded-2xl border border-white/10 bg-black/25 p-3 text-left hover:bg-white/10"
+                  >
+                    <p className="text-sm font-bold">{template.name}</p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      {template.description}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
-              <h2 className="mb-3 text-sm font-semibold">Files</h2>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-bold">Files</h2>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={addFile}
+                    disabled={!activeProject}
+                    className="rounded-xl bg-white px-3 py-1.5 text-[11px] font-bold text-black disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+
+                  <button
+                    onClick={deleteSelectedFile}
+                    disabled={!selectedFile}
+                    className="rounded-xl border border-red-400/20 px-3 py-1.5 text-[11px] font-bold text-red-300 disabled:opacity-40"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
 
               {activeProject?.files?.length ? (
                 <FileTree
@@ -1084,36 +1440,19 @@ return (
                 />
               ) : (
                 <p className="rounded-2xl border border-dashed border-white/10 p-4 text-xs text-zinc-500">
-                  Generated files will appear here.
+                  No generated files.
                 </p>
               )}
-
-              <div className="mt-4 flex gap-2">
-                <input
-                  value={newFilePath}
-                  onChange={(event) => setNewFilePath(event.target.value)}
-                  placeholder="/src/new-file.ts"
-                  className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white outline-none placeholder:text-zinc-600"
-                />
-
-                <button
-                  onClick={createFile}
-                  disabled={!activeProject}
-                  className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-black disabled:opacity-40"
-                >
-                  Add
-                </button>
-              </div>
             </section>
           </aside>
 
           <section className="flex min-w-0 flex-col gap-4">
             <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
-              <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold">Prompt</h2>
+                  <h2 className="text-sm font-bold">Prompt</h2>
                   <p className="text-xs text-zinc-500">
-                    Describe the app or the improvement you want.
+                    Describe the app or the improvement task.
                   </p>
                 </div>
 
@@ -1138,8 +1477,8 @@ return (
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Create a premium mobile-first SaaS dashboard with onboarding, pricing, analytics, auth screens, SEO and clean component architecture..."
-                className="min-h-36 w-full resize-none rounded-3xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-white/30"
+                placeholder="Create a premium mobile-first SaaS dashboard..."
+                className="min-h-36 w-full resize-none rounded-3xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none placeholder:text-zinc-600"
               />
 
               {error && (
@@ -1150,87 +1489,251 @@ return (
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
-                  onClick={() => handleGenerateJob()}
+                  onClick={() => handleGenerateJob(false)}
                   disabled={isGenerating}
                   className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-50"
                 >
-                  {isGenerating ? "Generating..." : "Generate / Improve"}
+                  {isGenerating ? "Generating..." : "Generate Job"}
                 </button>
 
                 <button
-                  onClick={handleAutoImprove}
-                  disabled={isGenerating || !activeProject?.files?.length}
-                  className="rounded-2xl border border-white/15 px-5 py-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50"
+                  onClick={() => handleGenerate(false)}
+                  disabled={isGenerating}
+                  className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold hover:bg-white/10 disabled:opacity-50"
                 >
-                  {isAutoImprove ? "Improving..." : "Auto Improve"}
+                  Generate Sync
                 </button>
+
+                <button
+                  onClick={() => handleGenerateJob(true)}
+                  disabled={isGenerating || !activeProject?.files?.length}
+                  className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold hover:bg-white/10 disabled:opacity-50"
+                >
+                  Improve
+                </button>
+
+                <button
+                  onClick={handleAutopilot}
+                  disabled={isAutopilotRunning || !activeProject?.files?.length}
+                  className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold hover:bg-white/10 disabled:opacity-50"
+                >
+                  {isAutopilotRunning ? "Autopilot..." : "Autopilot"}
+                </button>
+
+                <button
+                  onClick={stopAutopilot}
+                  disabled={!isAutopilotRunning}
+                  className="rounded-2xl border border-red-400/20 px-5 py-3 text-sm font-bold text-red-300 disabled:opacity-40"
+                >
+                  Stop
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <label>
+                  <span className="mb-1 block text-xs text-zinc-500">
+                    Autopilot target score
+                  </span>
+                  <input
+                    type="number"
+                    min={50}
+                    max={100}
+                    value={autopilotTargetScore}
+                    onChange={(event) =>
+                      setAutopilotTargetScore(Number(event.target.value))
+                    }
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
+                  />
+                </label>
+
+                <label>
+                  <span className="mb-1 block text-xs text-zinc-500">
+                    Max iterations
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={autopilotMaxIterations}
+                    onChange={(event) =>
+                      setAutopilotMaxIterations(Number(event.target.value))
+                    }
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
+                  />
+                </label>
               </div>
             </section>
 
-            <JobPanel job={generationJob} />
-
-            <PreviewPanel files={activeProject?.files || []} />
-
-            <RealPreviewPanel
-              session={previewSession}
-              loading={isStartingPreview}
-              onStart={handleStartPreview}
-              onStop={handleStopPreview}
-            />
-
-            <section className="min-h-[560px] overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-2xl">
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
-                    {selectedFile?.path || "No file selected"}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    {selectedFile?.content?.length
-                      ? `${selectedFile.content.length.toLocaleString()} characters`
-                      : "Select a generated file"}
-                  </p>
-                </div>
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button
+                  onClick={handleBuildCheck}
+                  disabled={!activeProject}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+                >
+                  Build Check
+                </button>
 
                 <button
-                  onClick={copySelectedFile}
-                  disabled={!selectedFile?.content}
-                  className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-zinc-300 hover:bg-white/10 disabled:opacity-40"
+                  onClick={handleScoreProject}
+                  disabled={!activeProject}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
                 >
-                  Copy
+                  Score
+                </button>
+
+                <button
+                  onClick={handleInspectProject}
+                  disabled={!activeProject}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+                >
+                  Inspect
+                </button>
+
+                <button
+                  onClick={() => handleResolveDependencies(false)}
+                  disabled={!activeProject}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+                >
+                  Deps
+                </button>
+
+                <button
+                  onClick={() => handleResolveDependencies(true)}
+                  disabled={!activeProject}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+                >
+                  Fix Deps
+                </button>
+
+                <button
+                  onClick={handleCreateDeploymentPack}
+                  disabled={!activeProject}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+                >
+                  Deploy Pack
+                </button>
+
+                <button
+                  onClick={handleCreatePublishReport}
+                  disabled={!activeProject}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
+                >
+                  Publish Report
+                </button>
+
+                <button
+                  onClick={handleStartPreview}
+                  disabled={!activeProject?.files?.length}
+                  className="rounded-2xl bg-white px-4 py-2 text-xs font-bold text-black disabled:opacity-40"
+                >
+                  Start Preview
+                </button>
+
+                <button
+                  onClick={handleStopPreview}
+                  disabled={!previewSession?.id}
+                  className="rounded-2xl border border-red-400/20 px-4 py-2 text-xs font-bold text-red-300 disabled:opacity-40"
+                >
+                  Stop Preview
                 </button>
               </div>
 
-              <div className="h-[620px] overflow-auto">
-                {selectedFile ? (
-                  <CodeViewer file={selectedFile} />
-                ) : (
-                  <div className="flex h-full items-center justify-center p-8 text-center text-sm text-zinc-500">
-                    Generate a project to inspect files.
+              <PreviewPanel
+                files={activeProject?.files || []}
+                session={previewInfo}
+              />
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-2">
+              <div className="min-h-[620px] overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-2xl">
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold">
+                      {selectedFile?.path || "No file selected"}
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                      {selectedFile?.content?.length
+                        ? `${selectedFile.content.length.toLocaleString()} characters`
+                        : "Select a file"}
+                    </p>
                   </div>
+                </div>
+
+                <CodeEditor
+                  file={selectedFile}
+                  onChange={(content) => {
+                    if (!selectedFile) return;
+                    updateFileContent(selectedFile.path, content);
+                  }}
+                />
+              </div>
+
+              <div className="space-y-4">
+                {generationJob && (
+                  <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h2 className="text-sm font-bold">Job</h2>
+                      <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300">
+                        {generationJob.status}
+                      </span>
+                    </div>
+
+                    {generationJob.error && (
+                      <div className="mb-3 rounded-2xl border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-200">
+                        {generationJob.error}
+                      </div>
+                    )}
+
+                    <div className="max-h-80 overflow-auto rounded-2xl bg-black/40 p-3">
+                      {(generationJob.logs || []).map((log: string, index: number) => (
+                        <p key={`${log}-${index}`} className="text-xs leading-5 text-zinc-400">
+                          {log}
+                        </p>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {lastResponse && (
+                  <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                    <h2 className="mb-2 text-sm font-bold">Last response</h2>
+                    <p className="whitespace-pre-wrap text-xs leading-6 text-zinc-300">
+                      {lastResponse.changelog}
+                    </p>
+                  </section>
+                )}
+
+                {autopilotLogs.length > 0 && (
+                  <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                    <h2 className="mb-3 text-sm font-bold">Autopilot logs</h2>
+                    <div className="max-h-80 overflow-auto rounded-2xl bg-black/40 p-3">
+                      {autopilotLogs.map((log, index) => (
+                        <p key={`${log}-${index}`} className="text-xs leading-5 text-zinc-400">
+                          {log}
+                        </p>
+                      ))}
+                    </div>
+                  </section>
                 )}
               </div>
             </section>
-
-            <FileEditorPanel
-              file={selectedFile}
-              onSave={saveFile}
-              onDelete={deleteFile}
-            />
           </section>
 
           <aside className="space-y-4">
             <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
-              <h2 className="mb-3 text-sm font-semibold">AI Provider</h2>
+              <h2 className="mb-3 text-sm font-bold">AI Provider</h2>
 
               <div className="space-y-3">
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">Provider</span>
-
+                  <span className="mb-1 block text-xs text-zinc-500">
+                    Provider
+                  </span>
                   <select
                     value={aiConfig.provider || "gemini"}
                     onChange={(event) =>
-                      setAiConfig((prev) => ({
-                        ...prev,
+                      setAiConfig((previous) => ({
+                        ...previous,
                         provider: event.target.value,
                       }))
                     }
@@ -1238,51 +1741,54 @@ return (
                   >
                     <option value="gemini">Gemini</option>
                     <option value="openai">OpenAI-compatible</option>
-                    <option value="groq">Groq / custom</option>
+                    <option value="groq">Groq/custom</option>
                   </select>
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">Model</span>
-
+                  <span className="mb-1 block text-xs text-zinc-500">
+                    Model
+                  </span>
                   <input
                     value={aiConfig.model || ""}
                     onChange={(event) =>
-                      setAiConfig((prev) => ({
-                        ...prev,
+                      setAiConfig((previous) => ({
+                        ...previous,
                         model: event.target.value,
                       }))
                     }
-                    placeholder="gemini-2.5-flash / llama-3.3-70b-versatile"
+                    placeholder="gemini-2.5-flash"
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none placeholder:text-zinc-700"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">API Key</span>
-
+                  <span className="mb-1 block text-xs text-zinc-500">
+                    API key
+                  </span>
                   <input
                     type="password"
                     value={aiConfig.apiKey || ""}
                     onChange={(event) =>
-                      setAiConfig((prev) => ({
-                        ...prev,
+                      setAiConfig((previous) => ({
+                        ...previous,
                         apiKey: event.target.value,
                       }))
                     }
-                    placeholder="Optional if server .env is configured"
+                    placeholder="Optional if .env is configured"
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none placeholder:text-zinc-700"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">Base URL</span>
-
+                  <span className="mb-1 block text-xs text-zinc-500">
+                    Base URL
+                  </span>
                   <input
                     value={aiConfig.baseUrl || ""}
                     onChange={(event) =>
-                      setAiConfig((prev) => ({
-                        ...prev,
+                      setAiConfig((previous) => ({
+                        ...previous,
                         baseUrl: event.target.value,
                       }))
                     }
@@ -1293,87 +1799,150 @@ return (
               </div>
             </section>
 
-            <ScorePanel
+            <ScorePanel score={healthScore} nextActions={activeProject?.nextActions || []} />
+
+            <ProjectHealthPanel
               score={activeProject?.score}
-              nextActions={activeProject?.nextActions}
+              buildResult={buildResult}
+              publishReport={publishReport}
+              memory={projectMemory}
             />
 
-            <ActionQueuePanel
-              actions={activeProject?.nextActions || []}
-              loading={isGenerating}
-              onRunAction={runAction}
-              onRunAll={runAllActions}
+            <MemoryPanel
+              memory={projectMemory}
+              loading={isLoadingMemory}
+              onLoad={handleLoadMemory}
+              onReset={handleResetMemory}
             />
 
-            <AutopilotPanel
-              running={isAutopilotRunning}
-              targetScore={autopilotTargetScore}
-              maxIterations={autopilotMaxIterations}
-              logs={autopilotLogs}
-              onTargetScoreChange={setAutopilotTargetScore}
-              onMaxIterationsChange={setAutopilotMaxIterations}
-              onStart={runAutopilot}
-              onStop={stopAutopilot}
-            />
+            {activeProject?.nextActions?.length ? (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-bold">Next actions</h2>
 
-            <BuildPanel
-              result={buildResult}
-              loading={isCheckingBuild}
-              onCheckVirtual={() => handleBuildCheck("virtual")}
-              onCheckReal={() => handleBuildCheck("real")}
-            />
+                  <button
+                    onClick={runAllActions}
+                    className="rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-black"
+                  >
+                    Run all
+                  </button>
+                </div>
 
-            <InspectionPanel
-              inspection={inspection}
-              loading={isInspecting}
-              onInspect={handleInspectProject}
-            />
+                <div className="space-y-2">
+                  {activeProject.nextActions.map((action) => (
+                    <div
+                      key={action}
+                      className="rounded-2xl border border-white/10 bg-black/25 p-3"
+                    >
+                      <p className="text-xs leading-5 text-zinc-300">{action}</p>
 
-            <DependencyPanel
-              resolution={dependencyResolution}
-              loading={isResolvingDependencies}
-              onAnalyze={handleAnalyzeDependencies}
-              onApply={handleApplyDependencyFix}
-            />
+                      <button
+                        onClick={() => runAction(action)}
+                        className="mt-2 rounded-xl border border-white/10 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-white/10"
+                      >
+                        Run
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
-            <DeploymentPanel
-              loading={isCreatingDeploymentPack}
-              onGenerate={handleCreateDeploymentPack}
-            />
-
-            <PublishPanel
-              report={publishReport}
-              loading={isCreatingPublishReport}
-              onGenerate={handleCreatePublishReport}
-            />
-
-            {lastResponse && (
-              <motion.section
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl"
-              >
-                <h2 className="mb-2 text-sm font-semibold">Last generation</h2>
-
-                <p className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">
-                  {lastResponse.changelog}
+            {buildResult && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                <h2 className="mb-2 text-sm font-bold">Build result</h2>
+                <p
+                  className={
+                    buildResult.ok
+                      ? "text-sm font-bold text-emerald-300"
+                      : "text-sm font-bold text-red-300"
+                  }
+                >
+                  {buildResult.ok ? "PASS" : "FAIL"}
                 </p>
 
-                <div className="mt-3 rounded-2xl bg-black/30 p-3 text-xs text-zinc-400">
-                  Mode: {lastResponse.mode || "create"} · Saved:{" "}
-                  {lastResponse.estimatedTimeSaved || "—"}
+                {buildResult.issues?.length > 0 && (
+                  <ul className="mt-3 space-y-1 text-xs text-zinc-300">
+                    {buildResult.issues.slice(0, 8).map((issue: any, index: number) => (
+                      <li key={`${issue.message}-${index}`}>
+                        • {issue.file ? `${issue.file}: ` : ""}
+                        {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {inspection && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                <h2 className="mb-3 text-sm font-bold">Inspection</h2>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <Info label="Framework" value={inspection.framework} />
+                  <Info label="Language" value={inspection.language} />
+                  <Info label="Package" value={inspection.packageManager} />
+                  <Info label="Entrypoints" value={inspection.entrypoints?.length || 0} />
                 </div>
-              </motion.section>
+
+                <List title="Risks" items={inspection.risks} />
+                <List title="Strengths" items={inspection.strengths} />
+              </section>
+            )}
+
+            {dependencyResolution && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                <h2 className="mb-3 text-sm font-bold">Dependencies</h2>
+
+                <p
+                  className={
+                    dependencyResolution.ok
+                      ? "text-sm font-bold text-emerald-300"
+                      : "text-sm font-bold text-amber-300"
+                  }
+                >
+                  {dependencyResolution.ok ? "OK" : "Needs update"}
+                </p>
+
+                <List
+                  title="Missing"
+                  items={dependencyResolution.missingDependencies || []}
+                />
+
+                <List
+                  title="Warnings"
+                  items={dependencyResolution.warnings || []}
+                />
+              </section>
+            )}
+
+            {publishReport && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+                <h2 className="mb-3 text-sm font-bold">Publish report</h2>
+
+                <p
+                  className={
+                    publishReport.ready
+                      ? "text-sm font-bold text-emerald-300"
+                      : "text-sm font-bold text-red-300"
+                  }
+                >
+                  {publishReport.ready ? "READY" : "BLOCKED"} · {publishReport.score}/100
+                </p>
+
+                <List title="Blockers" items={publishReport.blockers || []} />
+                <List title="Warnings" items={publishReport.warnings || []} />
+              </section>
             )}
 
             {activeProject?.commits?.length ? (
               <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold">History</h2>
+                  <h2 className="text-sm font-bold">History</h2>
 
                   <button
                     onClick={compactHistory}
-                    className="rounded-xl border border-white/10 px-2 py-1 text-[11px] font-bold text-zinc-300 hover:bg-white/10"
+                    className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-bold hover:bg-white/10"
                   >
                     Compact
                   </button>
@@ -1391,12 +1960,11 @@ return (
 
                       <p className="mt-2 text-[11px] text-zinc-600">
                         {new Date(commit.timestamp).toLocaleString()} ·{" "}
-                        {commit.files.length} changed files · score{" "}
-                        {commit.score?.total ?? "—"}
+                        {commit.files.length} files
                       </p>
 
                       <button
-                        onClick={() => restoreCommit(commit.id)}
+                        onClick={() => restoreCommit(commit)}
                         className="mt-2 rounded-xl bg-white px-3 py-1.5 text-[11px] font-bold text-black"
                       >
                         Restore
@@ -1411,4 +1979,30 @@ return (
       </div>
     </div>
   );
-            }
+}
+
+function Info({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+      <p className="text-[11px] text-zinc-500">{label}</p>
+      <p className="mt-1 truncate text-xs font-bold text-white">
+        {String(value ?? "—")}
+      </p>
+    </div>
+  );
+}
+
+function List({ title, items = [] }: { title: string; items?: string[] }) {
+  if (!items.length) return null;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+      <p className="mb-2 text-xs font-bold text-white">{title}</p>
+      <ul className="space-y-1 text-xs text-zinc-300">
+        {items.slice(0, 8).map((item) => (
+          <li key={item}>• {item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+                      }
