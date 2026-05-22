@@ -1,43 +1,39 @@
 {
   "name": "forge-ai-app-builder",
-  "version": "3.0.0",
   "private": true,
+  "version": "3.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "start": "NODE_ENV=production tsx server.ts",
-    "build": "vite build",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "start": "node server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "clsx": "latest",
-"tailwind-merge": "latest"
     "@google/genai": "latest",
     "@tailwindcss/vite": "latest",
-    "@vitejs/plugin-react": "latest",
-    "dotenv": "latest",
+    "clsx": "latest",
     "express": "latest",
-    "file-saver": "latest",
     "framer-motion": "latest",
-    "jsonrepair": "latest",
     "jszip": "latest",
     "lucide-react": "latest",
-    "motion": "latest",
     "openai": "latest",
     "react": "latest",
     "react-dom": "latest",
     "react-syntax-highlighter": "latest",
-    "tailwindcss": "latest",
-    "vite": "latest"
+    "tailwind-merge": "latest",
+    "tailwindcss": "latest"
   },
   "devDependencies": {
     "@types/express": "latest",
-    "@types/file-saver": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/react-syntax-highlighter": "latest",
-    "tsx": "latest",
-    "typescript": "latest"
+    "@vitejs/plugin-react": "latest",
+    "autoprefixer": "latest",
+    "postcss": "latest",
+    "typescript": "latest",
+    "vite": "latest"
   }
 }
