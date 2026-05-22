@@ -1,14 +1,19 @@
-import type { GenerateInput, ProjectScore } from "../engine/types";
+import { compactMemory } from "../engine/memory";
 import { compactProjectContext } from "../engine/projectContext";
+import type { GenerateInput, ProjectScore } from "../engine/types";
 
 export function buildCoderPrompt(params: {
   input: GenerateInput;
   plan: unknown;
   review?: unknown;
   score?: ProjectScore;
+  memory?: any;
 }) {
   const { input, plan, review, score } = params;
   const projectContext = compactProjectContext(input.currentFiles || []);
+  const memoryContext = params.memory
+    ? compactMemory(params.memory)
+    : "No project memory.";
 
   const filesContext =
     input.currentFiles?.length > 0
@@ -48,6 +53,9 @@ ${JSON.stringify(score || {}, null, 2)}
 
 PROJECT CONTEXT:
 ${projectContext}
+
+PROJECT MEMORY:
+${memoryContext}
 
 CURRENT FILES:
 ${filesContext}
@@ -106,6 +114,9 @@ DECISION RULES:
 - If build reliability is uncertain, prefer fewer dependencies.
 - If adding UI icons, add lucide-react to package.json.
 - If adding animation, add framer-motion only when useful.
+- Use project memory to avoid repeating past mistakes.
+- If memory shows recurring build failures, fix those patterns first.
+- If memory shows successful fixes, reuse the same strategy when relevant.
 
 OUTPUT ONLY JSON.
 `;
@@ -119,4 +130,4 @@ function isIgnored(path: string) {
     path.endsWith("yarn.lock") ||
     path.endsWith("pnpm-lock.yaml")
   );
-}
+    }
