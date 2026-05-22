@@ -13,6 +13,7 @@ export type AiConfig = {
 export type BuildMode = "virtual" | "real" | "none";
 
 export type GenerateInput = {
+  projectId?: string;
   prompt: string;
   currentFiles: VirtualFile[];
   isAutoImprove?: boolean;
