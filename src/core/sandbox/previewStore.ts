@@ -1,12 +1,13 @@
 import { spawn, type ChildProcess } from "child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import net from "net";
 import os from "os";
 import path from "path";
 import type { VirtualFile } from "../engine/types";
 
 export type PreviewSession = {
   id: string;
-  status: "starting" | "running" | "error" | "stopped";
+  status: "starting" | "installing" | "running" | "error" | "stopped";
   port: number;
   url: string;
   tmpDir: string;
@@ -19,10 +20,15 @@ export type PreviewSession = {
 const sessions = new Map<string, PreviewSession>();
 const processes = new Map<string, ChildProcess>();
 
+const INSTALL_TIMEOUT_MS = 240_000;
+const START_TIMEOUT_MS = 60_000;
+const MAX_LOG_LINES = 120;
+
 export async function startPreviewSession(files: VirtualFile[]) {
   const id = crypto.randomUUID();
   const port = await getFreePort();
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "forge-preview-"));
+  const npmCacheDir = path.join(os.tmpdir(), "forge-npm-cache");
 
   const session: PreviewSession = {
     id,
@@ -38,18 +44,45 @@ export async function startPreviewSession(files: VirtualFile[]) {
   sessions.set(id, session);
 
   try {
+    await mkdir(npmCacheDir, { recursive: true });
     await writeProjectFiles(tmpDir, files);
 
-    await runCommand(tmpDir, "npm", ["install", "--no-audit", "--no-fund"], id);
-
-    const child = spawn("npm", ["run", "dev", "--", "--host", "0.0.0.0", "--port", String(port)], {
-      cwd: tmpDir,
-      shell: process.platform === "win32",
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-      },
+    updateSession(id, {
+      status: "installing",
     });
+
+    await runCommand({
+      cwd: tmpDir,
+      command: "npm",
+      args: [
+        "install",
+        "--no-audit",
+        "--no-fund",
+        "--prefer-offline",
+        "--cache",
+        npmCacheDir,
+      ],
+      sessionId: id,
+      timeoutMs: INSTALL_TIMEOUT_MS,
+    });
+
+    updateSession(id, {
+      status: "starting",
+    });
+
+    const child = spawn(
+      "npm",
+      ["run", "dev", "--", "--host", "0.0.0.0", "--port", String(port)],
+      {
+        cwd: tmpDir,
+        shell: process.platform === "win32",
+        env: {
+          ...process.env,
+          NODE_ENV: "development",
+          npm_config_loglevel: "error",
+        },
+      }
+    );
 
     processes.set(id, child);
 
@@ -58,9 +91,18 @@ export async function startPreviewSession(files: VirtualFile[]) {
 
     child.on("close", () => {
       const current = sessions.get(id);
-      if (!current) return;
+      if (!current || current.status === "stopped") return;
       updateSession(id, { status: "stopped" });
     });
+
+    child.on("error", (error) => {
+      updateSession(id, {
+        status: "error",
+        error: error.message,
+      });
+    });
+
+    await waitForServer(port, START_TIMEOUT_MS);
 
     updateSession(id, {
       status: "running",
@@ -103,6 +145,17 @@ export async function stopPreviewSession(id: string) {
   return sessions.get(id);
 }
 
+export async function cleanupPreviewSessions(maxAgeMs = 1000 * 60 * 60) {
+  const now = Date.now();
+
+  for (const [id, session] of sessions.entries()) {
+    if (now - session.updatedAt > maxAgeMs) {
+      await stopPreviewSession(id);
+      sessions.delete(id);
+    }
+  }
+}
+
 function updateSession(id: string, patch: Partial<PreviewSession>) {
   const session = sessions.get(id);
   if (!session) return null;
@@ -121,11 +174,18 @@ function pushLog(id: string, message: string) {
   const session = sessions.get(id);
   if (!session) return;
 
+  const lines = message
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return;
+
   updateSession(id, {
     logs: [
-      `${new Date().toLocaleTimeString()} · ${message.trim()}`,
+      ...lines.map((line) => `${new Date().toLocaleTimeString()} · ${line}`),
       ...session.logs,
-    ].slice(0, 100),
+    ].slice(0, MAX_LOG_LINES),
   });
 }
 
@@ -133,7 +193,9 @@ async function writeProjectFiles(root: string, files: VirtualFile[]) {
   for (const file of files) {
     if (!file.content) continue;
 
-    const safePath = file.path.replace(/^\/+/, "").replace(/\.\./g, "");
+    const safePath = sanitizePath(file.path);
+    if (!safePath) continue;
+
     const absolutePath = path.join(root, safePath);
 
     if (!absolutePath.startsWith(root)) continue;
@@ -143,64 +205,102 @@ async function writeProjectFiles(root: string, files: VirtualFile[]) {
   }
 }
 
-function runCommand(
-  cwd: string,
-  command: string,
-  args: string[],
-  sessionId: string
-): Promise<void> {
+function sanitizePath(filePath: string) {
+  return filePath.replace(/^\/+/, "").replace(/\.\./g, "");
+}
+
+function runCommand(params: {
+  cwd: string;
+  command: string;
+  args: string[];
+  sessionId: string;
+  timeoutMs: number;
+}): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
+    const child = spawn(params.command, params.args, {
+      cwd: params.cwd,
       shell: process.platform === "win32",
       env: {
         ...process.env,
         CI: "1",
+        npm_config_loglevel: "error",
       },
     });
 
-    let log = "";
+    let settled = false;
 
-    child.stdout.on("data", (data) => {
-      const text = data.toString();
-      log += text;
-      pushLog(sessionId, text);
-    });
+    const finish = (error?: Error) => {
+      if (settled) return;
 
-    child.stderr.on("data", (data) => {
-      const text = data.toString();
-      log += text;
-      pushLog(sessionId, text);
-    });
+      settled = true;
+      clearTimeout(timer);
+
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(new Error(`Command timed out after ${params.timeoutMs}ms`));
+    }, params.timeoutMs);
+
+    child.stdout.on("data", (data) => pushLog(params.sessionId, data.toString()));
+    child.stderr.on("data", (data) => pushLog(params.sessionId, data.toString()));
 
     child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(log || `${command} failed with code ${code}`));
+      if (code === 0) finish();
+      else finish(new Error(`${params.command} failed with code ${code}`));
     });
 
-    child.on("error", reject);
+    child.on("error", finish);
+  });
+}
+
+function waitForServer(port: number, timeoutMs: number): Promise<void> {
+  const startedAt = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const tryConnect = () => {
+      const socket = net.createConnection({ port, host: "127.0.0.1" });
+
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve();
+      });
+
+      socket.once("error", () => {
+        socket.destroy();
+
+        if (Date.now() - startedAt > timeoutMs) {
+          reject(new Error(`Preview server did not start after ${timeoutMs}ms`));
+          return;
+        }
+
+        setTimeout(tryConnect, 500);
+      });
+    };
+
+    tryConnect();
   });
 }
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
-    import("net").then((net) => {
-      const server = net.createServer();
+    const server = net.createServer();
 
-      server.listen(0, () => {
-        const address = server.address();
+    server.listen(0, () => {
+      const address = server.address();
 
-        if (!address || typeof address === "string") {
-          server.close();
-          reject(new Error("Could not allocate preview port."));
-          return;
-        }
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Could not allocate preview port."));
+        return;
+      }
 
-        const port = address.port;
-        server.close(() => resolve(port));
-      });
-
-      server.on("error", reject);
+      const port = address.port;
+      server.close(() => resolve(port));
     });
+
+    server.on("error", reject);
   });
-        }
+    }
