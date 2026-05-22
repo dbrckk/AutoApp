@@ -21,6 +21,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export async function generateProject(params: {
+  projectId?: string;
   prompt: string;
   currentFiles: VirtualFile[];
   isAutoImprove?: boolean;
@@ -31,6 +32,7 @@ export async function generateProject(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      projectId: params.projectId,
       prompt: params.prompt,
       currentFiles: params.currentFiles,
       isAutoImprove: Boolean(params.isAutoImprove),
@@ -41,6 +43,7 @@ export async function generateProject(params: {
 }
 
 export async function startGenerationJob(params: {
+  projectId?: string;
   prompt: string;
   currentFiles: VirtualFile[];
   isAutoImprove?: boolean;
@@ -51,6 +54,7 @@ export async function startGenerationJob(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      projectId: params.projectId,
       prompt: params.prompt,
       currentFiles: params.currentFiles,
       isAutoImprove: Boolean(params.isAutoImprove),
@@ -62,16 +66,41 @@ export async function startGenerationJob(params: {
   return data.jobId;
 }
 
+export async function startAutopilotJob(params: {
+  projectId?: string;
+  prompt: string;
+  files: VirtualFile[];
+  aiConfig?: AiConfig;
+  buildMode?: BuildMode;
+  targetScore?: number;
+  maxIterations?: number;
+}) {
+  const data = await request<{ ok: boolean; jobId: string }>("/api/autopilot/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId: params.projectId,
+      prompt: params.prompt,
+      files: params.files,
+      aiConfig: params.aiConfig,
+      buildMode: params.buildMode || "virtual",
+      targetScore: params.targetScore || 90,
+      maxIterations: params.maxIterations || 5,
+    }),
+  });
+
+  return data.jobId;
+}
+
 export async function getJob(jobId: string) {
-  const data = await request<{ ok: boolean; job: any }>(`/api/jobs/${jobId}`);
-  return data.job;
+  return request<any>(`/api/jobs/${jobId}`);
 }
 
 export async function checkBuild(params: {
   files: VirtualFile[];
   mode?: BuildMode;
 }) {
-  return request<any>("/api/build-check", {
+  return request<any>("/api/build/check", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -166,17 +195,35 @@ export async function startPreview(files: VirtualFile[]) {
 }
 
 export async function getPreview(id: string) {
-  const data = await request<{ ok: boolean; session: any }>(`/api/preview/${id}`);
-  return data.session;
+  return request<any>(`/api/preview/${id}`);
 }
 
 export async function stopPreview(id: string) {
   const data = await request<{ ok: boolean; session: any }>(
-    `/api/preview/${id}/stop`,
+    `/api/preview/${id}`,
     {
-      method: "POST",
+      method: "DELETE",
     }
   );
 
   return data.session;
-                                         }
+}
+
+export async function getProjectMemory(projectId: string) {
+  const data = await request<{ ok: boolean; memory: any }>(
+    `/api/memory/${projectId}`
+  );
+
+  return data.memory;
+}
+
+export async function resetProjectMemory(projectId: string) {
+  const data = await request<{ ok: boolean; memory: any }>(
+    `/api/memory/${projectId}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  return data.memory;
+}
