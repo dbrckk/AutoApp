@@ -24,19 +24,37 @@ const BUILTIN_MODULES = new Set([
   "events",
   "util",
   "zlib",
+  "net",
+  "tls",
+  "readline",
+  "worker_threads",
+]);
+
+const DEV_DEPENDENCIES = new Set([
+  "vite",
+  "typescript",
+  "@vitejs/plugin-react",
+  "tailwindcss",
+  "@tailwindcss/vite",
+  "eslint",
+  "prettier",
+  "vitest",
+  "@types/react",
+  "@types/react-dom",
+  "@types/node",
 ]);
 
 const DEFAULT_VERSIONS: Record<string, string> = {
-  "@vitejs/plugin-react": "latest",
-  vite: "latest",
-  typescript: "latest",
   react: "latest",
   "react-dom": "latest",
+  vite: "latest",
+  typescript: "latest",
+  "@vitejs/plugin-react": "latest",
   tailwindcss: "latest",
   "@tailwindcss/vite": "latest",
   "lucide-react": "latest",
   "framer-motion": "latest",
-  "motion": "latest",
+  motion: "latest",
   recharts: "latest",
   clsx: "latest",
   "class-variance-authority": "latest",
@@ -47,6 +65,8 @@ const DEFAULT_VERSIONS: Record<string, string> = {
   dotenv: "latest",
   openai: "latest",
   "@google/genai": "latest",
+  jszip: "latest",
+  "file-saver": "latest",
 };
 
 export function resolveProjectDependencies(files: VirtualFile[]): DependencyResolution {
@@ -64,27 +84,40 @@ export function resolveProjectDependencies(files: VirtualFile[]): DependencyReso
   }
 
   const usedPackages = detectUsedPackages(files);
-  const declaredDependencies = getDeclaredDependencies(packageJson);
-  const missingDependencies = usedPackages.filter(
-    (pkg) => !declaredDependencies.includes(pkg)
-  );
 
   if (!packageJson) {
     packageJson = createDefaultPackageJson(usedPackages);
-  } else {
-    packageJson.dependencies = packageJson.dependencies || {};
+  }
 
-    for (const dep of missingDependencies) {
+  packageJson.name = packageJson.name || "forge-generated-app";
+  packageJson.version = packageJson.version || "1.0.0";
+  packageJson.private = packageJson.private ?? true;
+  packageJson.type = packageJson.type || "module";
+
+  packageJson.scripts = {
+    dev: "vite",
+    build: "vite build",
+    preview: "vite preview",
+    ...(packageJson.scripts || {}),
+  };
+
+  packageJson.dependencies = packageJson.dependencies || {};
+  packageJson.devDependencies = packageJson.devDependencies || {};
+
+  ensureBaseReactVite(packageJson);
+
+  const declaredBefore = getDeclaredDependencies(packageJson);
+  const missingDependencies = usedPackages.filter((pkg) => !declaredBefore.includes(pkg));
+
+  for (const dep of missingDependencies) {
+    if (DEV_DEPENDENCIES.has(dep)) {
+      packageJson.devDependencies[dep] = DEFAULT_VERSIONS[dep] || "latest";
+    } else {
       packageJson.dependencies[dep] = DEFAULT_VERSIONS[dep] || "latest";
     }
-
-    packageJson.scripts = {
-      dev: packageJson.scripts?.dev || "vite",
-      build: packageJson.scripts?.build || "vite build",
-      preview: packageJson.scripts?.preview || "vite preview",
-      ...packageJson.scripts,
-    };
   }
+
+  cleanupDependencyPlacement(packageJson);
 
   return {
     ok: missingDependencies.length === 0 && warnings.length === 0,
@@ -123,27 +156,18 @@ function normalizePath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function ensureBaseReactVite(packageJson: any) {
+  packageJson.dependencies.react = packageJson.dependencies.react || "latest";
+  packageJson.dependencies["react-dom"] = packageJson.dependencies["react-dom"] || "latest";
+
+  packageJson.devDependencies.vite = packageJson.devDependencies.vite || "latest";
+  packageJson.devDependencies.typescript = packageJson.devDependencies.typescript || "latest";
+  packageJson.devDependencies["@vitejs/plugin-react"] =
+    packageJson.devDependencies["@vitejs/plugin-react"] || "latest";
+}
+
 function createDefaultPackageJson(usedPackages: string[]) {
-  const dependencies: Record<string, string> = {
-    react: "latest",
-    "react-dom": "latest",
-  };
-
-  const devDependencies: Record<string, string> = {
-    "@vitejs/plugin-react": "latest",
-    vite: "latest",
-    typescript: "latest",
-  };
-
-  for (const dep of usedPackages) {
-    if (dep === "vite" || dep === "typescript" || dep === "@vitejs/plugin-react") {
-      devDependencies[dep] = DEFAULT_VERSIONS[dep] || "latest";
-    } else {
-      dependencies[dep] = DEFAULT_VERSIONS[dep] || "latest";
-    }
-  }
-
-  return {
+  const packageJson = {
     name: "forge-generated-app",
     version: "1.0.0",
     private: true,
@@ -153,9 +177,26 @@ function createDefaultPackageJson(usedPackages: string[]) {
       build: "vite build",
       preview: "vite preview",
     },
-    dependencies,
-    devDependencies,
+    dependencies: {
+      react: "latest",
+      "react-dom": "latest",
+    } as Record<string, string>,
+    devDependencies: {
+      vite: "latest",
+      typescript: "latest",
+      "@vitejs/plugin-react": "latest",
+    } as Record<string, string>,
   };
+
+  for (const dep of usedPackages) {
+    if (DEV_DEPENDENCIES.has(dep)) {
+      packageJson.devDependencies[dep] = DEFAULT_VERSIONS[dep] || "latest";
+    } else {
+      packageJson.dependencies[dep] = DEFAULT_VERSIONS[dep] || "latest";
+    }
+  }
+
+  return packageJson;
 }
 
 function getDeclaredDependencies(packageJson: any) {
@@ -165,7 +206,32 @@ function getDeclaredDependencies(packageJson: any) {
     ...Object.keys(packageJson.dependencies || {}),
     ...Object.keys(packageJson.devDependencies || {}),
     ...Object.keys(packageJson.peerDependencies || {}),
-  ];
+  ].sort();
+}
+
+function cleanupDependencyPlacement(packageJson: any) {
+  for (const dep of Object.keys(packageJson.dependencies || {})) {
+    if (DEV_DEPENDENCIES.has(dep)) {
+      packageJson.devDependencies[dep] =
+        packageJson.devDependencies[dep] || packageJson.dependencies[dep];
+
+      delete packageJson.dependencies[dep];
+    }
+  }
+
+  for (const dep of Object.keys(packageJson.devDependencies || {})) {
+    if (!DEV_DEPENDENCIES.has(dep) && packageJson.dependencies?.[dep]) {
+      delete packageJson.devDependencies[dep];
+    }
+  }
+
+  packageJson.dependencies = sortObject(packageJson.dependencies || {});
+  packageJson.devDependencies = sortObject(packageJson.devDependencies || {});
+  packageJson.scripts = sortObject(packageJson.scripts || {});
+}
+
+function sortObject(input: Record<string, string>) {
+  return Object.fromEntries(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function detectUsedPackages(files: VirtualFile[]) {
@@ -198,6 +264,7 @@ function extractImports(content: string) {
 
   const patterns = [
     /import\s+[^'"]*from\s+["']([^"']+)["']/g,
+    /import\s+["']([^"']+)["']/g,
     /import\s*\(\s*["']([^"']+)["']\s*\)/g,
     /require\s*\(\s*["']([^"']+)["']\s*\)/g,
     /export\s+[^'"]*from\s+["']([^"']+)["']/g,
@@ -223,4 +290,4 @@ function normalizePackageName(value: string) {
   }
 
   return value.split("/")[0];
-}
+  }
