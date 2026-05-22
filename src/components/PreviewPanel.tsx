@@ -3,6 +3,7 @@ import type { VirtualFile } from "../types";
 
 type Props = {
   files: VirtualFile[];
+  session?: any;
 };
 
 function getFile(files: VirtualFile[], path: string) {
@@ -25,7 +26,7 @@ function extractBodyFromReactApp(content: string) {
   `;
 }
 
-export function PreviewPanel({ files }: Props) {
+export function PreviewPanel({ files, session }: Props) {
   const html = useMemo(() => {
     const indexHtml = getFile(files, "/index.html")?.content;
     const appFile =
@@ -33,9 +34,9 @@ export function PreviewPanel({ files }: Props) {
       getFile(files, "/src/App.jsx")?.content ||
       "";
 
-    const body = indexHtml?.includes("<body")
-      ? indexHtml
-      : `<!DOCTYPE html>
+    if (indexHtml?.includes("<body")) return indexHtml;
+
+    return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
@@ -98,27 +99,46 @@ export function PreviewPanel({ files }: Props) {
   ${extractBodyFromReactApp(appFile)}
 </body>
 </html>`;
-
-    return body;
   }, [files]);
 
-  if (!files.length) return null;
+  if (!files.length && !session?.url) return null;
 
   return (
     <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-2xl">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-white">Preview</h2>
-          <p className="text-xs text-zinc-500">Static iframe preview</p>
+          <p className="text-xs text-zinc-500">
+            {session?.url ? "Real preview available" : "Static iframe preview"}
+          </p>
         </div>
+
+        {session?.url && (
+          <a
+            href={session.url}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-2xl bg-white px-4 py-2 text-xs font-bold text-black"
+          >
+            Open real preview
+          </a>
+        )}
       </div>
 
-      <iframe
-        title="Generated app preview"
-        sandbox="allow-scripts"
-        srcDoc={html}
-        className="h-[560px] w-full bg-black"
-      />
+      {session?.url ? (
+        <iframe
+          title="Real app preview"
+          src={session.url}
+          className="h-[560px] w-full bg-black"
+        />
+      ) : (
+        <iframe
+          title="Generated app preview"
+          sandbox="allow-scripts"
+          srcDoc={html}
+          className="h-[560px] w-full bg-black"
+        />
+      )}
     </section>
   );
-}
+          }
