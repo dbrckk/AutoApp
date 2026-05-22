@@ -3,9 +3,17 @@ import { buildDebuggerPrompt } from "../agents/debugger";
 import { buildPlannerPrompt } from "../agents/planner";
 import { buildReviewerPrompt } from "../agents/reviewer";
 import { applyDependencyResolution } from "../intelligence/dependencyResolver";
+import { inspectProject } from "../intelligence/projectInspector";
 import { runRealBuild } from "../sandbox/realBuildRunner";
 import { virtualBuildCheck } from "../sandbox/virtualBuild";
 import { mergeFiles } from "./fileMerge";
+import {
+  loadProjectMemory,
+  registerAiDecision,
+  registerBuildResult,
+  registerProjectProfile,
+  registerSuccessfulFix,
+} from "./memory";
 import { ensureArray, ensureString, parseAiJson } from "./json";
 import { scoreProject } from "./scoring";
 import type {
@@ -31,6 +39,7 @@ export async function orchestrateGeneration(
   const mode = input.currentFiles?.length ? "improve" : "create";
   const buildMode = input.buildMode || "virtual";
   const safeCurrentFiles = sanitizeFiles(input.currentFiles || []);
+  const memory = await loadProjectMemory(input.projectId || "default-project");
 
   const plan = await safeJsonCall<any>(
     callAi,
@@ -73,6 +82,7 @@ export async function orchestrateGeneration(
       plan,
       review,
       score: initialScore,
+      memory,
     }),
     {
       files: [],
@@ -85,6 +95,18 @@ export async function orchestrateGeneration(
 
   let mergedFiles = mergeFiles(safeCurrentFiles, generatedFiles);
   mergedFiles = applyDependencyResolution(mergedFiles);
+
+  const inspection = inspectProject(mergedFiles);
+
+  await registerProjectProfile({
+    memory,
+    framework: inspection.framework,
+    language: inspection.language,
+    preferredLibraries: [
+      ...inspection.dependencies,
+      ...inspection.devDependencies,
+    ],
+  });
 
   let finalChangedFiles = mergeFiles(
     generatedFiles,
@@ -102,6 +124,12 @@ export async function orchestrateGeneration(
   );
 
   let buildResult = await runBuildCheck(mergedFiles, buildMode);
+
+  await registerBuildResult({
+    memory,
+    success: buildResult.ok,
+    issues: buildResult.issues,
+  });
 
   if (!buildResult.ok) {
     for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
@@ -142,7 +170,18 @@ export async function orchestrateGeneration(
 
       buildResult = await runBuildCheck(mergedFiles, buildMode);
 
+      await registerBuildResult({
+        memory,
+        success: buildResult.ok,
+        issues: buildResult.issues,
+      });
+
       if (buildResult.ok) {
+        await registerSuccessfulFix(
+          memory,
+          `Repair ${attempt} fixed build issues.`
+        );
+
         changelog += `\nBuild check passed after repair ${attempt}.`;
         break;
       }
@@ -151,6 +190,12 @@ export async function orchestrateGeneration(
 
   const score = scoreProject(mergedFiles);
   const nextActions = buildNextActions(score, buildResult);
+
+  await registerAiDecision({
+    memory,
+    type: "generation",
+    summary: changelog.slice(0, 300),
+  });
 
   return {
     files: finalChangedFiles,
@@ -223,18 +268,18 @@ function normalizeGeneratedFiles(files: unknown) {
     });
 }
 
-function normalizePath(path: string) {
-  if (!path) return "/";
-  return path.startsWith("/") ? path : `/${path}`;
+function normalizePath(pathValue: string) {
+  if (!pathValue) return "/";
+  return pathValue.startsWith("/") ? pathValue : `/${pathValue}`;
 }
 
-function isIgnoredFile(path: string) {
+function isIgnoredFile(pathValue: string) {
   return (
-    path.includes("/node_modules/") ||
-    path.includes("/.git/") ||
-    path.endsWith("package-lock.json") ||
-    path.endsWith("yarn.lock") ||
-    path.endsWith("pnpm-lock.yaml")
+    pathValue.includes("/node_modules/") ||
+    pathValue.includes("/.git/") ||
+    pathValue.endsWith("package-lock.json") ||
+    pathValue.endsWith("yarn.lock") ||
+    pathValue.endsWith("pnpm-lock.yaml")
   );
 }
 
@@ -308,4 +353,4 @@ function formatChangelog(params: {
     "Next actions:",
     ...params.nextActions.map((action) => `- ${action}`),
   ].join("\n");
-      }
+    }
