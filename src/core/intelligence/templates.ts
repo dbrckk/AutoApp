@@ -31,7 +31,7 @@ export function getProjectTemplate(id: ProjectTemplateId) {
   return listProjectTemplates().find((template) => template.id === id);
 }
 
-function basePackageJson(name: string) {
+function basePackageJson(name: string): VirtualFile {
   return {
     path: "/package.json",
     content: JSON.stringify(
@@ -46,17 +46,17 @@ function basePackageJson(name: string) {
           preview: "vite preview",
         },
         dependencies: {
-          "@vitejs/plugin-react": "latest",
-          vite: "latest",
-          typescript: "latest",
+          "@tailwindcss/vite": "latest",
+          "framer-motion": "latest",
+          "lucide-react": "latest",
           react: "latest",
           "react-dom": "latest",
-          tailwindcss: "latest",
-          "@tailwindcss/vite": "latest",
-          "lucide-react": "latest",
-          "framer-motion": "latest",
         },
-        devDependencies: {},
+        devDependencies: {
+          "@vitejs/plugin-react": "latest",
+          typescript: "latest",
+          vite: "latest",
+        },
       },
       null,
       2
@@ -76,6 +76,9 @@ function baseFiles(name: string): VirtualFile[] {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${name}</title>
     <meta name="description" content="Generated production-ready application." />
+    <meta property="og:title" content="${name}" />
+    <meta property="og:description" content="Generated production-ready application." />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>
@@ -94,6 +97,34 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
 });
 `,
+    },
+    {
+      path: "/tsconfig.json",
+      content: JSON.stringify(
+        {
+          compilerOptions: {
+            target: "ES2020",
+            useDefineForClassFields: true,
+            lib: ["DOM", "DOM.Iterable", "ES2020"],
+            allowJs: false,
+            skipLibCheck: true,
+            esModuleInterop: true,
+            allowSyntheticDefaultImports: true,
+            strict: true,
+            forceConsistentCasingInFileNames: true,
+            module: "ESNext",
+            moduleResolution: "Node",
+            resolveJsonModule: true,
+            isolatedModules: true,
+            noEmit: true,
+            jsx: "react-jsx",
+          },
+          include: ["src"],
+          references: [],
+        },
+        null,
+        2
+      ),
     },
     {
       path: "/src/main.tsx",
@@ -117,12 +148,47 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   background: #050505;
   color: white;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+`,
+    },
+    {
+      path: "/README.md",
+      content: `# ${name}
+
+Generated with Forge AI App Builder.
+
+## Install
+
+\`\`\`bash
+npm install
+\`\`\`
+
+## Development
+
+\`\`\`bash
+npm run dev
+\`\`\`
+
+## Build
+
+\`\`\`bash
+npm run build
+\`\`\`
+`,
+    },
+    {
+      path: "/.env.example",
+      content: `VITE_APP_NAME="${name}"
+VITE_PUBLIC_SITE_URL="https://example.com"
 `,
     },
   ];
@@ -139,7 +205,13 @@ function createSaasTemplate(): ProjectTemplate {
       ...baseFiles("forge-saas-starter"),
       {
         path: "/src/App.tsx",
-        content: `export default function App() {
+        content: `const features = [
+  "Conversion-focused landing page",
+  "Reusable dashboard foundation",
+  "Pricing and onboarding sections",
+];
+
+export default function App() {
   return (
     <main className="min-h-screen bg-[#050505] text-white">
       <section className="mx-auto flex min-h-screen max-w-6xl flex-col justify-center px-6 py-20">
@@ -153,6 +225,16 @@ function createSaasTemplate(): ProjectTemplate {
         <div className="mt-8 flex flex-wrap gap-3">
           <button className="rounded-2xl bg-white px-5 py-3 font-bold text-black">Start now</button>
           <button className="rounded-2xl border border-white/15 px-5 py-3 font-bold text-white">View demo</button>
+        </div>
+        <div className="mt-12 grid gap-4 md:grid-cols-3">
+          {features.map((feature) => (
+            <article key={feature} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <h2 className="font-bold">{feature}</h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                Ready to be expanded by Forge autopilot.
+              </p>
+            </article>
+          ))}
         </div>
       </section>
     </main>
@@ -189,6 +271,7 @@ export default function App() {
         <div className="mb-6 rounded-3xl border border-white/10 bg-white/[0.04] p-6">
           <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Dashboard</p>
           <h1 className="mt-2 text-4xl font-black tracking-tight">Command center</h1>
+          <p className="mt-3 text-sm text-zinc-400">Monitor core business metrics in one place.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-4">
           {metrics.map(([label, value, delta]) => (
@@ -232,6 +315,7 @@ export default function App() {
       <section className="mx-auto max-w-6xl">
         <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Deals</p>
         <h1 className="mt-3 text-5xl font-black tracking-tight">Best verified deals today</h1>
+        <p className="mt-4 max-w-2xl text-zinc-400">A fast, SEO-ready deal discovery foundation.</p>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {products.map((product) => (
             <article key={product.name} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
@@ -276,7 +360,9 @@ export default function App() {
   return (
     <main className="min-h-screen bg-[#050505] p-4 text-white">
       <section className="mx-auto max-w-6xl">
-        <h1 className="text-4xl font-black tracking-tight">Trading Scanner</h1>
+        <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Scanner</p>
+        <h1 className="mt-3 text-4xl font-black tracking-tight">Trading Scanner</h1>
+        <p className="mt-3 text-sm text-zinc-400">Signal confidence, risk and pair ranking.</p>
         <div className="mt-6 space-y-3">
           {signals.map(([pair, direction, confidence, risk]) => (
             <article key={pair} className="grid gap-3 rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:grid-cols-4">
@@ -319,7 +405,7 @@ function createMobileTemplate(): ProjectTemplate {
             <div key={item} className="rounded-3xl bg-white/10 p-4 font-bold">{item}</div>
           ))}
         </div>
-        <nav className="mt-8 grid grid-cols-3 gap-2 rounded-3xl bg-black/40 p-2 text-center text-xs text-zinc-400">
+        <nav className="mt-8 grid grid-cols-3 gap-2 rounded-3xl bg-black/40 p-2 text-center text-xs text-zinc-400" aria-label="Main navigation">
           <span>Home</span><span>Stats</span><span>Profile</span>
         </nav>
       </section>
@@ -350,7 +436,10 @@ function createAiToolTemplate(): ProjectTemplate {
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
           <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">AI Tool</p>
           <h1 className="mt-3 text-5xl font-black tracking-tight">Generate better outputs</h1>
-          <textarea className="mt-8 min-h-48 w-full rounded-3xl border border-white/10 bg-black/40 p-4 outline-none" placeholder="Write your prompt..." />
+          <label className="mt-8 block">
+            <span className="text-sm text-zinc-400">Prompt</span>
+            <textarea className="mt-2 min-h-48 w-full rounded-3xl border border-white/10 bg-black/40 p-4 outline-none" placeholder="Write your prompt..." />
+          </label>
           <button className="mt-4 rounded-2xl bg-white px-5 py-3 font-bold text-black">Generate</button>
         </div>
         <aside className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
@@ -365,4 +454,4 @@ function createAiToolTemplate(): ProjectTemplate {
       },
     ],
   };
-}
+      }
