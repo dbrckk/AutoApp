@@ -1,3 +1,4 @@
+import { compactProjectContext } from "../engine/projectContext";
 import type { VirtualFile } from "../engine/types";
 import type { BuildIssue } from "../sandbox/errorParser";
 
@@ -6,6 +7,7 @@ export function buildDebuggerPrompt(params: {
   issues: BuildIssue[];
   buildLog: string;
 }) {
+  const projectContext = compactProjectContext(params.files);
   const relevantFiles = selectRelevantFiles(params.files, params.issues);
 
   const filesContext = relevantFiles
@@ -23,7 +25,10 @@ export function buildDebuggerPrompt(params: {
   return `
 You are the DEBUGGER agent of Forge AI App Builder.
 
-The generated project has build or runtime errors.
+The project has build or runtime errors.
+
+PROJECT CONTEXT:
+${projectContext}
 
 BUILD ISSUES:
 ${JSON.stringify(params.issues, null, 2)}
@@ -39,8 +44,6 @@ Fix the root cause of the errors.
 
 RETURN FORMAT:
 Return ONLY valid JSON. No markdown. No comments outside JSON.
-
-Required JSON shape:
 
 {
   "files": [
@@ -59,25 +62,15 @@ ABSOLUTE RULES:
 - Never return partial files.
 - Never use ellipsis.
 - Fix root causes, not symptoms.
-- If a dependency is missing, update package.json.
-- If an import is wrong, correct the import or create the missing file.
-- If an export is missing, add the export or fix the import.
-- If TypeScript types are wrong, fix the types cleanly.
-- Do not remove major features unless they directly cause the build failure.
-- Do not replace the entire app with a trivial placeholder.
+- If dependency is missing, update package.json.
+- If relative import is missing, create the file or correct the path.
+- If named export is missing, add the export or fix the import.
+- If TypeScript types are wrong, fix types cleanly.
+- If Vite alias is broken, fix vite.config.ts and tsconfig.json.
+- Keep package.json valid.
 - Keep npm run build working.
-- Keep package.json valid JSON.
-- Keep TypeScript syntax valid.
-- Avoid introducing new dependencies unless necessary.
-
-COMMON FIX STRATEGIES:
-- Missing module: add dependency to package.json or remove/replace import.
-- Missing relative import: create the file or correct path.
-- Bad named export: update export or import.
-- JSX error: fix tags, fragments, prop names.
-- Type mismatch: define clear local types.
-- Vite alias error: update vite.config.ts and tsconfig.json.
-- CSS/Tailwind error: simplify invalid classes.
+- Do not replace the app with a trivial placeholder.
+- Do not remove major features unless they directly cause failure.
 
 OUTPUT ONLY JSON.
 `;
@@ -116,9 +109,7 @@ function selectRelevantFiles(files: VirtualFile[], issues: BuildIssue[]) {
 
   if (selected.length > 0) return selected;
 
-  return files
-    .filter((file) => file.content && !isIgnored(file.path))
-    .slice(0, 20);
+  return files.filter((file) => file.content && !isIgnored(file.path)).slice(0, 24);
 }
 
 function normalizePath(path: string) {
