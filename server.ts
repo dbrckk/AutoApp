@@ -1,213 +1,517 @@
+import "dotenv/config";
+
 import express from "express";
 import path from "path";
-import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from "@google/genai";
-import OpenAI from "openai";
+import { fileURLToPath } from "url";
 
 import { orchestrateGeneration } from "./src/core/engine/orchestration";
-import {
-  cleanupOldJobs,
-  createJob,
-  getJob,
-  pushJobLog,
-  updateJob,
-} from "./src/core/engine/jobStore";
-import type { AiCaller } from "./src/core/engine/types";
+import { createAiCaller } from "./src/core/ai/provider";
+import type { VirtualFile } from "./src/core/engine/types";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
 
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ limit: "100mb", extended: true }));
+app.use(express.json({ limit: "50mb" }));
 
-const gemini = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
-});
+type JobStatus = "queued" | "running" | "success" | "error";
 
-function createAiCaller(aiConfig: any): AiCaller {
-  const provider = aiConfig?.provider || "gemini";
+type Job = {
+  id: string;
+  status: JobStatus;
+  createdAt: number;
+  updatedAt: number;
+  logs: string[];
+  result?: any;
+  error?: string;
+};
 
-  if (provider === "gemini") {
-    return async (prompt: string) => {
-      const models = [
-        aiConfig?.model,
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-      ].filter(Boolean);
+const jobs = new Map<string, Job>();
 
-      let lastError: unknown;
-
-      for (const model of models) {
-        try {
-          const response = await gemini.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-              responseMimeType: "application/json",
-              temperature: 0.2,
-              maxOutputTokens: 8192,
-              safetySettings: [
-                {
-                  category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                  threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                  category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                  threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                  category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                  threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                  category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-                  threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-              ],
-            },
-          });
-
-          return {
-            text: response.text || "",
-            raw: response,
-          };
-        } catch (error: any) {
-          lastError = error;
-
-          const message = String(error?.message || "");
-          const status = error?.status || error?.code;
-
-          if (
-            status === 429 ||
-            status === 503 ||
-            message.includes("429") ||
-            message.includes("503") ||
-            message.toLowerCase().includes("quota") ||
-            message.toLowerCase().includes("unavailable")
-          ) {
-            continue;
-          }
-
-          throw error;
-        }
-      }
-
-      throw new Error(
-        `Gemini failed across fallback models. Last error: ${
-          lastError instanceof Error ? lastError.message : String(lastError)
-        }`
-      );
-    };
-  }
-
-  return async (prompt: string) => {
-    const openai = new OpenAI({
-      apiKey: aiConfig?.apiKey || process.env.OPENAI_API_KEY || "",
-      baseURL: aiConfig?.baseUrl || undefined,
-    });
-
-    const requestedModel = aiConfig?.model || "llama-3.3-70b-versatile";
-
-    const fallbackModels = [
-      requestedModel,
-      "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
-      "mixtral-8x7b-32768",
-      "gemma2-9b-it",
-    ].filter((model, index, arr) => model && arr.indexOf(model) === index);
-
-    let lastError: unknown;
-
-    for (const model of fallbackModels) {
-      try {
-        const completion = await openai.chat.completions.create({
-          model,
-          temperature: 0.2,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are Forge AI. Return ONLY valid JSON. No markdown. No commentary.",
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-        });
-
-        return {
-          text: completion.choices[0]?.message?.content || "",
-          raw: completion,
-        };
-      } catch (error: any) {
-        lastError = error;
-
-        const status = error?.status || 500;
-        const message = String(error?.message || "");
-
-        if (
-          status === 429 ||
-          status >= 500 ||
-          message.includes("429") ||
-          message.toLowerCase().includes("rate limit") ||
-          message.toLowerCase().includes("temporarily unavailable")
-        ) {
-          continue;
-        }
-
-        throw error;
-      }
-    }
-
-    throw new Error(
-      `OpenAI-compatible provider failed across fallback models. Last error: ${
-        lastError instanceof Error ? lastError.message : String(lastError)
-      }`
-    );
-  };
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-function cleanFiles(files: any[]) {
-  if (!Array.isArray(files)) return [];
+function now() {
+  return Date.now();
+}
 
-  let totalChars = 0;
-  const MAX_CONTEXT_CHARS = 650_000;
+function createJob() {
+  const job: Job = {
+    id: uid(),
+    status: "queued",
+    createdAt: now(),
+    updatedAt: now(),
+    logs: [],
+  };
 
+  jobs.set(job.id, job);
+
+  return job;
+}
+
+function updateJob(id: string, patch: Partial<Job>) {
+  const current = jobs.get(id);
+
+  if (!current) return null;
+
+  const updated: Job = {
+    ...current,
+    ...patch,
+    updatedAt: now(),
+  };
+
+  jobs.set(id, updated);
+
+  return updated;
+}
+
+function pushJobLog(id: string, message: string) {
+  const current = jobs.get(id);
+
+  if (!current) return;
+
+  current.logs.unshift(
+    `${new Date().toISOString()} · ${message}`
+  );
+
+  current.logs = current.logs.slice(0, 200);
+
+  current.updatedAt = now();
+
+  jobs.set(id, current);
+}
+
+function cleanupOldJobs(maxAgeMs = 1000 * 60 * 60) {
+  const currentTime = now();
+
+  for (const [id, job] of jobs.entries()) {
+    if (currentTime - job.updatedAt > maxAgeMs) {
+      jobs.delete(id);
+    }
+  }
+}
+
+function cleanFiles(files: any[]): VirtualFile[] {
   return files
-    .filter((file) => {
-      const pathValue = String(file?.path || "");
+    .filter((file) => file?.path)
+    .map((file) => ({
+      path: normalizePath(file.path),
+      content:
+        typeof file.content === "string"
+          ? file.content
+          : "",
+    }));
+}
 
-      return (
-        pathValue &&
-        !pathValue.endsWith("package-lock.json") &&
-        !pathValue.endsWith("yarn.lock") &&
-        !pathValue.endsWith("pnpm-lock.yaml") &&
-        !pathValue.includes("node_modules") &&
-        !pathValue.includes(".git/")
+function normalizePath(value: string) {
+  if (!value.startsWith("/")) {
+    return `/${value}`;
+  }
+
+  return value;
+}
+
+setInterval(async () => {
+  try {
+    const { cleanupPreviewSessions } = await import(
+      "./src/core/sandbox/previewStore"
+    );
+
+    await cleanupPreviewSessions();
+
+    cleanupOldJobs();
+  } catch {
+    // silent cleanup
+  }
+}, 1000 * 60 * 15);
+
+app.get("/api/health", (_, res) => {
+  res.json({
+    ok: true,
+    timestamp: Date.now(),
+  });
+});
+
+app.get("/api/jobs/:id", (req, res) => {
+  const job = jobs.get(req.params.id);
+
+  if (!job) {
+    return res.status(404).json({
+      error: "Job not found",
+    });
+  }
+
+  res.json(job);
+});
+
+app.post("/api/generate", async (req, res) => {
+  try {
+    const {
+      projectId,
+      prompt,
+      currentFiles,
+      isAutoImprove,
+      aiConfig,
+      buildMode,
+    } = req.body;
+
+    if (!prompt || typeof prompt !== "string") {
+      return res.status(400).json({
+        error: "Missing required field: prompt",
+      });
+    }
+
+    const cleanedFiles = cleanFiles(currentFiles || []);
+
+    const callAi = createAiCaller(aiConfig);
+
+    const output = await orchestrateGeneration(
+      {
+        projectId: projectId || "default-project",
+        prompt,
+        currentFiles: cleanedFiles,
+        isAutoImprove: Boolean(isAutoImprove),
+        aiConfig,
+        buildMode: buildMode || "virtual",
+      },
+      callAi
+    );
+
+    res.json(output);
+  } catch (error: any) {
+    console.error("[/api/generate]", error);
+
+    res.status(500).json({
+      error: error?.message || "Generation failed",
+    });
+  }
+});
+
+app.post("/api/generate-job", async (req, res) => {
+  const job = createJob();
+
+  res.json({
+    ok: true,
+    jobId: job.id,
+  });
+
+  queueMicrotask(async () => {
+    try {
+      cleanupOldJobs();
+
+      const {
+        projectId,
+        prompt,
+        currentFiles,
+        isAutoImprove,
+        aiConfig,
+        buildMode,
+      } = req.body;
+
+      updateJob(job.id, {
+        status: "running",
+      });
+
+      pushJobLog(job.id, "Generation started.");
+
+      const cleanedFiles = cleanFiles(currentFiles || []);
+
+      const callAi = createAiCaller(aiConfig);
+
+      const output = await orchestrateGeneration(
+        {
+          projectId: projectId || "default-project",
+          prompt,
+          currentFiles: cleanedFiles,
+          isAutoImprove: Boolean(isAutoImprove),
+          aiConfig,
+          buildMode: buildMode || "virtual",
+        },
+        async (promptText: string) => {
+          pushJobLog(job.id, "Calling AI provider.");
+
+          const result = await callAi(promptText);
+
+          pushJobLog(job.id, "AI provider responded.");
+
+          return result;
+        }
       );
-    })
-    .map((file) => {
-      const filePath = String(file.path || "");
-      const content = String(file.content || "");
 
-      const isBinaryLike =
-        filePath.endsWith(".svg") ||
-        filePath.endsWith(".png") ||
-        filePath.endsWith(".jpg") ||
-        filePath.endsWith(".jpeg") ||
-        filePath.endsWith(".webp") ||
-        filePath.endsWith(".gif") ||
-        filePath.endsWith(".ico") ||
-        filePath.endsWith(".mp4") ||
-        filePath.endsWith(".mp3") ||
-        filePath.endsWith(".wav") ||
-        filePath.endsWith(".zip");
+      updateJob(job.id, {
+        status: "success",
+        result: output,
+      });
 
-      const isLarge = content.length > 80_000
+      pushJobLog(job.id, "Generation completed.");
+    } catch (error: any) {
+      console.error("[/api/generate-job]", error);
+
+      updateJob(job.id, {
+        status: "error",
+        error: error?.message || "Generation failed",
+      });
+
+      pushJobLog(
+        job.id,
+        error?.message || "Generation failed"
+      );
+    }
+  });
+});
+
+app.post("/api/autopilot/run", async (req, res) => {
+  const job = createJob();
+
+  res.json({
+    ok: true,
+    jobId: job.id,
+  });
+
+  queueMicrotask(async () => {
+    try {
+      cleanupOldJobs();
+
+      const {
+        projectId,
+        prompt,
+        files,
+        aiConfig,
+        buildMode,
+        targetScore,
+        maxIterations,
+      } = req.body;
+
+      updateJob(job.id, {
+        status: "running",
+      });
+
+      pushJobLog(job.id, "Autopilot started.");
+
+      if (!prompt || typeof prompt !== "string") {
+        throw new Error("Missing required field: prompt");
+      }
+
+      if (!Array.isArray(files)) {
+        throw new Error("Missing required field: files");
+      }
+
+      const cleanedFiles = cleanFiles(files);
+
+      const callAi = createAiCaller(aiConfig);
+
+      const { runAutopilot } = await import(
+        "./src/core/engine/autopilot"
+      );
+
+      const output = await runAutopilot({
+        projectId: projectId || "default-project",
+        prompt,
+        files: cleanedFiles,
+        callAi: async (promptText: string) => {
+          pushJobLog(job.id, "Calling AI provider.");
+
+          const result = await callAi(promptText);
+
+          pushJobLog(job.id, "AI provider responded.");
+
+          return result;
+        },
+        buildMode: buildMode || "virtual",
+        targetScore: Number(targetScore || 90),
+        maxIterations: Number(maxIterations || 5),
+        onLog: (message) => pushJobLog(job.id, message),
+      });
+
+      updateJob(job.id, {
+        status: "success",
+        result: output,
+      });
+
+      pushJobLog(job.id, "Autopilot completed.");
+    } catch (error: any) {
+      console.error("[/api/autopilot/run]", error);
+
+      updateJob(job.id, {
+        status: "error",
+        error: error?.message || "Autopilot failed.",
+      });
+
+      pushJobLog(
+        job.id,
+        error?.message || "Autopilot failed."
+      );
+    }
+  });
+});
+
+app.post("/api/build/check", async (req, res) => {
+  try {
+    const { files, mode } = req.body;
+
+    const cleanedFiles = cleanFiles(files || []);
+
+    if (mode === "real") {
+      const { runRealBuild } = await import(
+        "./src/core/sandbox/realBuildRunner"
+      );
+
+      const result = await runRealBuild(cleanedFiles);
+
+      return res.json(result);
+    }
+
+    const { virtualBuildCheck } = await import(
+      "./src/core/sandbox/virtualBuild"
+    );
+
+    const result = virtualBuildCheck(cleanedFiles);
+
+    res.json(result);
+  } catch (error: any) {
+    console.error("[/api/build/check]", error);
+
+    res.status(500).json({
+      error: error?.message || "Build check failed",
+    });
+  }
+});
+
+app.post("/api/preview/start", async (req, res) => {
+  try {
+    const { files } = req.body;
+
+    if (!Array.isArray(files)) {
+      return res.status(400).json({
+        error: "Missing required field: files",
+      });
+    }
+
+    const {
+      startPreviewSession,
+      cleanupPreviewSessions,
+    } = await import(
+      "./src/core/sandbox/previewStore"
+    );
+
+    await cleanupPreviewSessions();
+
+    const session = await startPreviewSession(
+      cleanFiles(files)
+    );
+
+    res.json({
+      ok: true,
+      session,
+    });
+  } catch (error: any) {
+    console.error("[/api/preview/start]", error);
+
+    res.status(500).json({
+      error: error?.message || "Preview start failed",
+    });
+  }
+});
+
+app.get("/api/preview/:id", async (req, res) => {
+  try {
+    const { getPreviewSession } = await import(
+      "./src/core/sandbox/previewStore"
+    );
+
+    const session = getPreviewSession(req.params.id);
+
+    if (!session) {
+      return res.status(404).json({
+        error: "Preview session not found",
+      });
+    }
+
+    res.json(session);
+  } catch (error: any) {
+    res.status(500).json({
+      error: error?.message || "Preview fetch failed",
+    });
+  }
+});
+
+app.delete("/api/preview/:id", async (req, res) => {
+  try {
+    const { stopPreviewSession } = await import(
+      "./src/core/sandbox/previewStore"
+    );
+
+    const session = await stopPreviewSession(
+      req.params.id
+    );
+
+    res.json({
+      ok: true,
+      session,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error?.message || "Preview stop failed",
+    });
+  }
+});
+
+app.get("/api/memory/:projectId", async (req, res) => {
+  try {
+    const { loadProjectMemory } = await import(
+      "./src/core/engine/memory"
+    );
+
+    const memory = await loadProjectMemory(
+      req.params.projectId
+    );
+
+    res.json({
+      ok: true,
+      memory,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error?.message || "Memory load failed",
+    });
+  }
+});
+
+app.delete("/api/memory/:projectId", async (req, res) => {
+  try {
+    const { resetProjectMemory } = await import(
+      "./src/core/engine/memory"
+    );
+
+    const memory = await resetProjectMemory(
+      req.params.projectId
+    );
+
+    res.json({
+      ok: true,
+      memory,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error?.message || "Memory reset failed",
+    });
+  }
+});
+
+app.use(express.static(path.join(__dirname, "dist")));
+
+app.get("*", (_, res) => {
+  res.sendFile(path.join(__dirname, "dist/index.html"));
+});
+
+async function startServer() {
+  const port = Number(process.env.PORT || 3000);
+
+  app.listen(port, () => {
+    console.log(`Forge server running on port ${port}`);
+  });
+}
+
+startServer();
