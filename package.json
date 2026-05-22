@@ -10,6 +10,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "clsx": "latest",
+"tailwind-merge": "latest"
     "@google/genai": "latest",
     "@tailwindcss/vite": "latest",
     "@vitejs/plugin-react": "latest",
