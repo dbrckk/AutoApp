@@ -1,5 +1,7 @@
 import type { GenerationResponse, VirtualFile } from "../types";
 
+const API_BASE_URL = "https://autoapp-api.dbrak7108.workers.dev";
+
 export type BuildMode = "none" | "virtual" | "real";
 
 export type AiConfig = {
@@ -10,7 +12,7 @@ export type AiConfig = {
 };
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options);
+  const response = await fetch(`${API_BASE_URL}${url}`, options);
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -226,4 +228,4 @@ export async function resetProjectMemory(projectId: string) {
   );
 
   return data.memory;
-}
+    }
