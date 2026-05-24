@@ -888,3 +888,717 @@ function scoreProject(files) {
     seo
   };
     }
+
+async function generateFilesFromAI(env, { prompt }) {
+  const apiKey = env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Missing GEMINI_API_KEY");
+  }
+
+  const model = env.DEFAULT_GEMINI_MODEL || "gemini-2.5-flash";
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.25,
+          responseMimeType: "application/json"
+        }
+      })
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || "Gemini request failed");
+  }
+
+  const text =
+    data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+    "[]";
+
+  return normalizeGeneratedFiles(parseAiFiles(text));
+}
+
+function parseAiFiles(text) {
+  const cleaned = String(text || "")
+    .trim()
+    .replace(/^```json/i, "")
+    .replace(/^```/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+
+    if (Array.isArray(parsed)) return parsed;
+
+    if (Array.isArray(parsed.files)) return parsed.files;
+
+    return [];
+  } catch {
+    const startArray = cleaned.indexOf("[");
+    const endArray = cleaned.lastIndexOf("]");
+
+    if (startArray >= 0 && endArray > startArray) {
+      try {
+        return JSON.parse(cleaned.slice(startArray, endArray + 1));
+      } catch {
+        return createFallbackProjectFiles();
+      }
+    }
+
+    const startObject = cleaned.indexOf("{");
+    const endObject = cleaned.lastIndexOf("}");
+
+    if (startObject >= 0 && endObject > startObject) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(startObject, endObject + 1));
+
+        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed.files)) return parsed.files;
+      } catch {
+        return createFallbackProjectFiles();
+      }
+    }
+
+    return createFallbackProjectFiles();
+  }
+}
+
+function normalizeGeneratedFiles(files) {
+  if (!Array.isArray(files)) return [];
+
+  const seen = new Set();
+
+  return files
+    .filter((file) => file && file.path)
+    .map((file) => ({
+      path: normalizePath(file.path),
+      content: file.content === null ? null : String(file.content || "")
+    }))
+    .filter((file) => {
+      if (seen.has(file.path)) return false;
+      seen.add(file.path);
+      return true;
+    });
+}
+
+function createFallbackProjectFiles() {
+  return [
+    {
+      path: "/package.json",
+      content: JSON.stringify(
+        {
+          name: "autoapp-generated-project",
+          version: "1.0.0",
+          private: true,
+          type: "module",
+          scripts: {
+            dev: "vite",
+            build: "vite build",
+            preview: "vite preview"
+          },
+          dependencies: {
+            "@tailwindcss/vite": "latest",
+            react: "latest",
+            "react-dom": "latest"
+          },
+          devDependencies: {
+            "@vitejs/plugin-react": "latest",
+            typescript: "latest",
+            vite: "latest"
+          }
+        },
+        null,
+        2
+      )
+    },
+    {
+      path: "/index.html",
+      content:
+        '<!doctype html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>AutoApp Generated Project</title><meta name="description" content="Generated with AutoApp." /></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>'
+    },
+    {
+      path: "/vite.config.ts",
+      content:
+        'import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react";\nimport tailwindcss from "@tailwindcss/vite";\n\nexport default defineConfig({ plugins: [react(), tailwindcss()] });\n'
+    },
+    {
+      path: "/tsconfig.json",
+      content: JSON.stringify(
+        {
+          compilerOptions: {
+            target: "ES2020",
+            useDefineForClassFields: true,
+            lib: ["DOM", "DOM.Iterable", "ES2020"],
+            allowJs: false,
+            skipLibCheck: true,
+            esModuleInterop: true,
+            allowSyntheticDefaultImports: true,
+            strict: true,
+            forceConsistentCasingInFileNames: true,
+            module: "ESNext",
+            moduleResolution: "Node",
+            resolveJsonModule: true,
+            isolatedModules: true,
+            noEmit: true,
+            jsx: "react-jsx"
+          },
+          include: ["src"]
+        },
+        null,
+        2
+      )
+    },
+    {
+      path: "/src/main.tsx",
+      content:
+        'import React from "react";\nimport ReactDOM from "react-dom/client";\nimport App from "./App";\nimport "./style.css";\n\nReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);\n'
+    },
+    {
+      path: "/src/App.tsx",
+      content:
+        'export default function App() {\n  return (\n    <main className="min-h-screen bg-[#050505] px-6 py-16 text-white">\n      <section className="mx-auto max-w-5xl rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl">\n        <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">AutoApp</p>\n        <h1 className="mt-4 text-5xl font-black tracking-tight md:text-7xl">Generated app recovered safely.</h1>\n        <p className="mt-6 max-w-2xl text-zinc-400">The AI response was invalid, so AutoApp generated a safe buildable fallback project.</p>\n      </section>\n    </main>\n  );\n}\n'
+    },
+    {
+      path: "/src/style.css",
+      content:
+        '@import "tailwindcss";\n\n* { box-sizing: border-box; }\nbody { margin: 0; background: #050505; color: white; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }\n'
+    }
+  ];
+}
+
+function mergeFiles(currentFiles, changedFiles) {
+  const map = new Map();
+
+  for (const file of currentFiles || []) {
+    map.set(normalizePath(file.path), {
+      path: normalizePath(file.path),
+      content: file.content
+    });
+  }
+
+  for (const file of changedFiles || []) {
+    const path = normalizePath(file.path);
+
+    if (file.content === null) {
+      map.delete(path);
+    } else {
+      map.set(path, {
+        path,
+        content: file.content
+      });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.path.localeCompare(b.path)
+  );
+}
+
+function safeJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizePath(path) {
+  const value = String(path || "").trim();
+  return value.startsWith("/") ? value : `/${value}`;
+}
+
+function createAndroidCapacitorFiles(prompt) {
+  const target = detectTarget(prompt);
+
+  if (!target.includes("android")) return [];
+
+  return [
+    {
+      path: "/capacitor.config.ts",
+      content: `import type { CapacitorConfig } from "@capacitor/cli";
+
+const config: CapacitorConfig = {
+  appId: "com.autoapp.generated",
+  appName: "AutoApp Generated Game",
+  webDir: "dist",
+  bundledWebRuntime: false,
+  server: {
+    androidScheme: "https"
+  }
+};
+
+export default config;
+`
+    },
+    {
+      path: "/manifest.webmanifest",
+      content: JSON.stringify(
+        {
+          name: "AutoApp Generated Game",
+          short_name: "AutoGame",
+          description:
+            "A mobile-first Android-ready game generated by AutoApp.",
+          start_url: "/",
+          display: "standalone",
+          background_color: "#020617",
+          theme_color: "#020617",
+          orientation: "portrait",
+          icons: [
+            {
+              src: "/icons/icon-192.svg",
+              sizes: "192x192",
+              type: "image/svg+xml",
+              purpose: "any maskable"
+            },
+            {
+              src: "/icons/icon-512.svg",
+              sizes: "512x512",
+              type: "image/svg+xml",
+              purpose: "any maskable"
+            }
+          ]
+        },
+        null,
+        2
+      )
+    },
+    {
+      path: "/public/icons/icon-192.svg",
+      content: createAppIconSvg(192)
+    },
+    {
+      path: "/public/icons/icon-512.svg",
+      content: createAppIconSvg(512)
+    },
+    {
+      path: "/ANDROID_BUILD.md",
+      content: `# Android Build Guide
+
+This project is Android-ready through Capacitor.
+
+## Requirements
+
+- Node.js 20+
+- Android Studio
+- Java JDK 17+
+- Android SDK installed
+
+## Install
+
+\`\`\`bash
+npm install
+\`\`\`
+
+## Build web app
+
+\`\`\`bash
+npm run build
+\`\`\`
+
+## Add Android platform
+
+\`\`\`bash
+npm install @capacitor/core @capacitor/cli @capacitor/android
+npx cap add android
+\`\`\`
+
+## Sync web build to Android
+
+\`\`\`bash
+npx cap sync android
+\`\`\`
+
+## Open Android Studio
+
+\`\`\`bash
+npx cap open android
+\`\`\`
+
+## Build APK / AAB
+
+In Android Studio:
+
+\`\`\`txt
+Build → Generate Signed Bundle / APK
+\`\`\`
+`
+    }
+  ];
+}
+
+function createAppIconSvg(size) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#020617"/>
+      <stop offset=".55" stop-color="#312e81"/>
+      <stop offset="1" stop-color="#0891b2"/>
+    </linearGradient>
+    <linearGradient id="ship" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#67e8f9"/>
+      <stop offset="1" stop-color="#c084fc"/>
+    </linearGradient>
+  </defs>
+  <rect width="${size}" height="${size}" rx="${size * 0.22}" fill="url(#bg)"/>
+  <circle cx="${size * 0.72}" cy="${size * 0.24}" r="${size * 0.12}" fill="#facc15" opacity=".9"/>
+  <path d="M${size * 0.5} ${size * 0.16} L${size * 0.78} ${size * 0.78} L${size * 0.5} ${size * 0.64} L${size * 0.22} ${size * 0.78} Z" fill="url(#ship)" stroke="white" stroke-width="${size * 0.035}" stroke-linejoin="round"/>
+</svg>`;
+}
+
+function createFinalPackagingFiles({
+  prompt,
+  target,
+  files,
+  score
+}) {
+  const profile = getTargetProfile(target);
+  const isAndroid = target.includes("android");
+  const isGame = target.includes("game");
+  const paths = files.map((file) => normalizePath(file.path));
+
+  const additions = [
+    {
+      path: "/README.md",
+      content: createFinalReadme({
+        prompt,
+        target,
+        profile,
+        score,
+        isAndroid,
+        isGame
+      })
+    },
+    {
+      path: "/.env.example",
+      content: createFinalEnvExample(target)
+    },
+    {
+      path: "/DEPLOYMENT.md",
+      content: createDeploymentGuide({
+        isAndroid,
+        isGame
+      })
+    },
+    {
+      path: "/RELEASE_CHECKLIST.md",
+      content: createReleaseChecklist({
+        target,
+        profile,
+        isAndroid,
+        isGame
+      })
+    }
+  ];
+
+  if (!paths.includes("/robots.txt")) {
+    additions.push({
+      path: "/robots.txt",
+      content: "User-agent: *\nAllow: /\nSitemap: /sitemap.xml\n"
+    });
+  }
+
+  if (!paths.includes("/sitemap.xml")) {
+    additions.push({
+      path: "/sitemap.xml",
+      content:
+        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>https://example.com/</loc>\n    <priority>1.0</priority>\n  </url>\n</urlset>\n'
+    });
+  }
+
+  if (isAndroid) {
+    additions.push(...createAndroidCapacitorFiles(prompt));
+  }
+
+  return additions;
+}
+
+function createFinalReadme({
+  prompt,
+  target,
+  profile,
+  score,
+  isAndroid,
+  isGame
+}) {
+  return `# AutoApp Generated Project
+
+## Purpose
+
+${prompt}
+
+## Target
+
+${profile.label} (${target})
+
+## Current Quality Score
+
+${score?.total || 0}/100
+
+## Included Capabilities
+
+${profile.requiredFeatures.map((item) => `- ${item}`).join("\n")}
+
+## Project Type
+
+${isGame ? "- Game-ready project with gameplay, scoring, feedback and assets." : "- Web application project."}
+${isAndroid ? "- Android-ready through Capacitor." : "- Web deployment-ready."}
+
+## Install
+
+\`\`\`bash
+npm install
+\`\`\`
+
+## Development
+
+\`\`\`bash
+npm run dev
+\`\`\`
+
+## Build
+
+\`\`\`bash
+npm run build
+\`\`\`
+
+## Deploy on Cloudflare Pages
+
+\`\`\`txt
+Build command: npm run build
+Build output directory: dist
+Root directory: /
+\`\`\`
+
+${isAndroid ? "## Android Build\n\nRead ANDROID_BUILD.md.\n" : ""}
+
+Generated autonomously by AutoApp.
+`;
+}
+
+function createFinalEnvExample(target) {
+  if (target === "ai-tool") {
+    return `VITE_APP_NAME="AutoApp Generated AI Tool"
+VITE_API_BASE_URL=""
+VITE_DEFAULT_MODEL="gemini-2.5-flash"
+`;
+  }
+
+  if (target.includes("android")) {
+    return `VITE_APP_NAME="AutoApp Android App"
+VITE_TARGET_PLATFORM="android"
+`;
+  }
+
+  if (target.includes("game")) {
+    return `VITE_APP_NAME="AutoApp Game"
+VITE_GAME_MODE="arcade"
+`;
+  }
+
+  return `VITE_APP_NAME="AutoApp Generated Project"
+`;
+}
+
+function createDeploymentGuide({
+  isAndroid,
+  isGame
+}) {
+  return `# Deployment Guide
+
+## Web Deployment
+
+Use GitHub + Cloudflare Pages.
+
+Settings:
+
+\`\`\`txt
+Build command: npm run build
+Build output directory: dist
+Root directory: /
+\`\`\`
+
+${isGame ? "## Game Notes\n\nLocal game assets should be stored in /src/assets.\n" : ""}
+
+${
+  isAndroid
+    ? `## Android Notes
+
+Cloudflare Workers cannot build APK/AAB files.
+
+\`\`\`bash
+npm install
+npm run build
+npm install @capacitor/core @capacitor/cli @capacitor/android
+npx cap add android
+npx cap sync android
+npx cap open android
+\`\`\`
+`
+    : "Android packaging is not enabled for this target."
+}
+`;
+}
+
+function createReleaseChecklist({
+  target,
+  profile,
+  isAndroid,
+  isGame
+}) {
+  return `# Release Checklist
+
+## Target
+
+${profile.label} (${target})
+
+## Required Feature Checks
+
+${profile.requiredFeatures.map((item) => `- [ ] ${item}`).join("\n")}
+
+## Quality Checks
+
+- [ ] npm install works
+- [ ] npm run build works
+- [ ] Main user flow works
+- [ ] Mobile layout works
+- [ ] Error states are visible
+- [ ] SEO metadata is present
+
+${isGame ? "- [ ] Game controls work\n- [ ] Score updates correctly\n- [ ] Restart works\n" : ""}
+${isAndroid ? "- [ ] Capacitor config exists\n- [ ] Android Studio opens project\n- [ ] APK/AAB builds successfully\n" : ""}
+`;
+}
+
+function createAutonomousReport({
+  job,
+  files,
+  build,
+  score,
+  targetProfile
+}) {
+  const paths = files.map((file) => normalizePath(file.path));
+  const isAndroid = String(job.target || "").includes("android");
+  const isGame = String(job.target || "").includes("game");
+
+  const readiness =
+    build.ok && score.total >= 90
+      ? "expert_ready"
+      : build.ok && score.total >= 80
+        ? "usable"
+        : build.ok
+          ? "needs_polish"
+          : "needs_repair";
+
+  const generatedAssets = paths.filter(
+    (path) =>
+      path.includes("/assets/") ||
+      path.includes("/icons/") ||
+      path.endsWith(".svg") ||
+      path.endsWith(".webmanifest")
+  );
+
+  return {
+    id: job.id,
+    prompt: job.prompt,
+    status: job.status,
+    phase: job.phase,
+    target: job.target,
+    targetLabel: targetProfile.label,
+    readiness,
+    score,
+    build,
+    attempts: {
+      current: job.attempts,
+      max: job.max_attempts
+    },
+    files: {
+      count: files.length,
+      paths,
+      generatedAssets
+    },
+    capabilities: {
+      webApp: true,
+      androidReady: isAndroid,
+      gameReady: isGame,
+      persistentJob: true,
+      cronResume: true,
+      svgAssets: generatedAssets.length > 0,
+      realServerBuild: false,
+      apkBuildOnWorker: false
+    },
+    deployment: {
+      cloudflarePages: {
+        buildCommand: "npm run build",
+        outputDirectory: "dist",
+        rootDirectory: "/"
+      },
+      android: isAndroid
+        ? {
+            supported: true,
+            method: "Capacitor",
+            guideFile: "/ANDROID_BUILD.md",
+            commands: [
+              "npm install",
+              "npm run build",
+              "npm install @capacitor/core @capacitor/cli @capacitor/android",
+              "npx cap add android",
+              "npx cap sync android",
+              "npx cap open android"
+            ]
+          }
+        : {
+            supported: false
+          }
+    },
+    nextActions: [],
+    summary: [
+      `Project target: ${job.target}.`,
+      `Readiness: ${readiness}.`,
+      `Score: ${score.total}/100.`,
+      `Virtual build: ${build.ok ? "PASS" : "ISSUES"}.`,
+      isAndroid
+        ? "Android packaging: Capacitor-ready. APK/AAB must be built outside Cloudflare Worker."
+        : ""
+    ]
+      .filter(Boolean)
+      .join(" ")
+  };
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: {
+      ...corsHeaders(),
+      "Content-Type": "application/json"
+    }
+  });
+}
+
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization"
+  };
+  }
