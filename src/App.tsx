@@ -9,44 +9,45 @@ import { ProjectHealthPanel } from "./components/ProjectHealthPanel";
 
 import {
   applyTemplate,
+  checkApiHealth,
   checkBuild,
+  createAutonomousJob,
   createDeploymentPack,
   createPublishReport,
   generateProject,
+  getAutonomousJobFiles,
+  getAutonomousJobReport,
+  getAutonomousJobZipFiles,
   getJob,
   getPreview,
   getProjectMemory,
   inspectProject,
+  listAutonomousJobs,
   listTemplates,
   resetProjectMemory,
   resolveDependencies,
+  resumeAutonomousJob,
+  runAutonomousJobStep,
   scoreProject,
   startAutopilotJob,
   startGenerationJob,
   startPreview,
   stopPreview,
+  testGeminiApi,
   type AiConfig,
+  type AutonomousJob,
   type BuildMode,
 } from "./lib/api";
 
-import {
-  exportProjectAsJson,
-  readProjectJsonFile,
-} from "./lib/projectIO";
+import { exportProjectAsJson, readProjectJsonFile } from "./lib/projectIO";
+import { downloadZip } from "./lib/zip";
 
-import {
-  downloadZip,
-} from "./lib/zip";
-
-import type {
-  Commit,
-  GenerationResponse,
-  Project,
-  VirtualFile,
-} from "./types";
+import type { Commit, GenerationResponse, Project, VirtualFile } from "./types";
 
 const STORAGE_KEY = "forge.projects.v2";
 const BACKUP_STORAGE_KEY = "forge.projects.v2.backup";
+
+const IS_CLOUDFLARE_FREE_MODE = true;
 
 const MAX_LOCAL_STORAGE_CHARS = 4_500_000;
 const MAX_PROJECTS_STORED = 8;
@@ -62,11 +63,12 @@ function now() {
 }
 
 function normalizePath(path: string) {
-  if (!path.startsWith("/")) {
-    return `/${path}`;
-  }
-
+  if (!path.startsWith("/")) return `/${path}`;
   return path;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function createEmptyProject(prompt = ""): Project {
@@ -82,10 +84,7 @@ function createEmptyProject(prompt = ""): Project {
   };
 }
 
-function mergeFiles(
-  currentFiles: VirtualFile[],
-  changedFiles: VirtualFile[]
-) {
+function mergeFiles(currentFiles: VirtualFile[], changedFiles: VirtualFile[]) {
   const map = new Map<string, VirtualFile>();
 
   for (const file of currentFiles) {
@@ -109,34 +108,26 @@ function mergeFiles(
     });
   }
 
-  return Array.from(map.values()).sort((a, b) =>
-    a.path.localeCompare(b.path)
-  );
+  return Array.from(map.values()).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 function compactProjectsForStorage(projects: Project[]) {
-  return projects
-    .slice(0, MAX_PROJECTS_STORED)
-    .map((project) => ({
-      ...project,
-      commits: (project.commits || [])
-        .slice(0, MAX_COMMITS_PER_PROJECT)
-        .map((commit) => ({
-          ...commit,
-          files: (commit.files || []).map((file) => ({
-            ...file,
-            content:
-              file.content &&
-              file.content.length >
-                MAX_FILE_CONTENT_CHARS_IN_HISTORY
-                ? file.content.slice(
-                    0,
-                    MAX_FILE_CONTENT_CHARS_IN_HISTORY
-                  ) + "\n/* HISTORY FILE TRUNCATED */"
-                : file.content,
-          })),
+  return projects.slice(0, MAX_PROJECTS_STORED).map((project) => ({
+    ...project,
+    commits: (project.commits || [])
+      .slice(0, MAX_COMMITS_PER_PROJECT)
+      .map((commit) => ({
+        ...commit,
+        files: (commit.files || []).map((file) => ({
+          ...file,
+          content:
+            file.content && file.content.length > MAX_FILE_CONTENT_CHARS_IN_HISTORY
+              ? file.content.slice(0, MAX_FILE_CONTENT_CHARS_IN_HISTORY) +
+                "\n/* HISTORY FILE TRUNCATED */"
+              : file.content,
         })),
-    }));
+      })),
+  }));
 }
 
 function measureStoragePayload(projects: Project[]) {
@@ -145,17 +136,11 @@ function measureStoragePayload(projects: Project[]) {
 
 function safeLoadBackupProjects(): Project[] {
   try {
-    const raw = localStorage.getItem(
-      BACKUP_STORAGE_KEY
-    );
-
+    const raw = localStorage.getItem(BACKUP_STORAGE_KEY);
     if (!raw) return [];
 
     const parsed = JSON.parse(raw);
-
-    return Array.isArray(parsed)
-      ? parsed
-      : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -163,168 +148,139 @@ function safeLoadBackupProjects(): Project[] {
 
 function safeLoadProjects(): Project[] {
   try {
-    const raw = localStorage.getItem(
-      STORAGE_KEY
-    );
+    const raw = localStorage.getItem(STORAGE_KEY);
 
-    if (!raw) {
-      return safeLoadBackupProjects();
-    }
+    if (!raw) return safeLoadBackupProjects();
 
     const parsed = JSON.parse(raw);
-
-    return Array.isArray(parsed)
-      ? parsed
-      : safeLoadBackupProjects();
+    return Array.isArray(parsed) ? parsed : safeLoadBackupProjects();
   } catch {
     return safeLoadBackupProjects();
   }
 }
 
 function safeSaveProjects(projects: Project[]) {
-  let safeProjects =
-    compactProjectsForStorage(projects);
-
+  let safeProjects = compactProjectsForStorage(projects);
   let payload = JSON.stringify(safeProjects);
 
-  while (
-    payload.length >
-      MAX_LOCAL_STORAGE_CHARS &&
-    safeProjects.length > 1
-  ) {
+  while (payload.length > MAX_LOCAL_STORAGE_CHARS && safeProjects.length > 1) {
     safeProjects = safeProjects.slice(0, -1);
     payload = JSON.stringify(safeProjects);
   }
 
-  if (
-    payload.length >
-    MAX_LOCAL_STORAGE_CHARS
-  ) {
-    safeProjects = safeProjects.map(
-      (project) => ({
-        ...project,
-        commits: [],
-      })
-    );
+  if (payload.length > MAX_LOCAL_STORAGE_CHARS) {
+    safeProjects = safeProjects.map((project) => ({
+      ...project,
+      commits: [],
+    }));
 
     payload = JSON.stringify(safeProjects);
   }
 
-  localStorage.setItem(
-    BACKUP_STORAGE_KEY,
-    payload
-  );
+  localStorage.setItem(BACKUP_STORAGE_KEY, payload);
+  localStorage.setItem(STORAGE_KEY, payload);
+}
 
-  localStorage.setItem(
-    STORAGE_KEY,
-    payload
-  );
+function formatRelativeTime(timestamp?: number) {
+  if (!timestamp) return "—";
+
+  const diff = timestamp - Date.now();
+
+  if (diff <= 0) return "now";
+
+  const seconds = Math.round(diff / 1000);
+  const minutes = Math.round(seconds / 60);
+
+  if (seconds < 60) return `${seconds}s`;
+  if (minutes < 60) return `${minutes}min`;
+
+  return `${Math.round(minutes / 60)}h`;
+}
+
+function getTargetLabel(target?: string) {
+  const labels: Record<string, string> = {
+    "web-game": "Web Game",
+    "android-web-game": "Android Web Game",
+    "android-capacitor": "Android Capacitor",
+    saas: "SaaS",
+    dashboard: "Dashboard",
+    ecommerce: "Ecommerce",
+    affiliate: "Affiliate",
+    trading: "Trading",
+    "ai-tool": "AI Tool",
+    "landing-page": "Landing Page",
+    crm: "CRM",
+    productivity: "Productivity",
+    education: "Education",
+    "web-app": "Web App",
+  };
+
+  return labels[target || ""] || target || "Unknown";
 }
 
 export default function App() {
-  const [projects, setProjects] = useState<Project[]>(
-    () => safeLoadProjects()
+  const [projects, setProjects] = useState<Project[]>(() => safeLoadProjects());
+  const [activeProjectId, setActiveProjectId] = useState<string>(
+    () => safeLoadProjects()?.[0]?.id || ""
   );
 
-  const [activeProjectId, setActiveProjectId] =
-    useState<string>(
-      () => safeLoadProjects()?.[0]?.id || ""
-    );
-
-  const [selectedPath, setSelectedPath] =
-    useState("");
-
+  const [selectedPath, setSelectedPath] = useState("");
   const [prompt, setPrompt] = useState("");
-
   const [error, setError] = useState("");
 
-  const [isGenerating, setIsGenerating] =
-    useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isAutopilotRunning, setIsAutopilotRunning] = useState(false);
+  const [autopilotStopRequested, setAutopilotStopRequested] = useState(false);
+  const [autopilotLogs, setAutopilotLogs] = useState<string[]>([]);
 
-  const [
-    isAutopilotRunning,
-    setIsAutopilotRunning,
-  ] = useState(false);
+  const [activeJobId, setActiveJobId] = useState("");
+  const [generationJob, setGenerationJob] = useState<any>(null);
 
-  const [
-    autopilotStopRequested,
-    setAutopilotStopRequested,
-  ] = useState(false);
+  const [buildResult, setBuildResult] = useState<any>(null);
+  const [inspection, setInspection] = useState<any>(null);
+  const [dependencyResolution, setDependencyResolution] = useState<any>(null);
+  const [publishReport, setPublishReport] = useState<any>(null);
 
-  const [autopilotLogs, setAutopilotLogs] =
-    useState<string[]>([]);
+  const [previewSession, setPreviewSession] = useState<any>(null);
+  const [previewInfo, setPreviewInfo] = useState<any>(null);
 
-  const [activeJobId, setActiveJobId] =
-    useState("");
+  const [lastResponse, setLastResponse] = useState<GenerationResponse | null>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
 
-  const [generationJob, setGenerationJob] =
-    useState<any>(null);
+  const [projectMemory, setProjectMemory] = useState<any>(null);
+  const [isLoadingMemory, setIsLoadingMemory] = useState(false);
 
-  const [buildResult, setBuildResult] =
-    useState<any>(null);
+  const [buildMode, setBuildMode] = useState<BuildMode>("virtual");
+  const [autopilotTargetScore, setAutopilotTargetScore] = useState(90);
+  const [autopilotMaxIterations, setAutopilotMaxIterations] = useState(5);
 
-  const [inspection, setInspection] =
-    useState<any>(null);
+  const [apiStatus, setApiStatus] = useState<"unknown" | "online" | "offline">("unknown");
+  const [apiStatusMessage, setApiStatusMessage] = useState("");
 
-  const [
-    dependencyResolution,
-    setDependencyResolution,
-  ] = useState<any>(null);
+  const [aiStatus, setAiStatus] = useState<"unknown" | "ready" | "error">("unknown");
+  const [aiStatusMessage, setAiStatusMessage] = useState("");
 
-  const [publishReport, setPublishReport] =
-    useState<any>(null);
+  const [autonomousJobs, setAutonomousJobs] = useState<AutonomousJob[]>([]);
+  const [activeAutonomousJobId, setActiveAutonomousJobId] = useState("");
+  const [isStartingAutonomousJob, setIsStartingAutonomousJob] = useState(false);
+  const [autoRunJobId, setAutoRunJobId] = useState("");
+  const [isAutoRunningJob, setIsAutoRunningJob] = useState(false);
+  const [autoRunLogs, setAutoRunLogs] = useState<string[]>([]);
+  const [autonomousReport, setAutonomousReport] = useState<any>(null);
+  const [isRunningUntilReady, setIsRunningUntilReady] = useState(false);
 
-  const [previewSession, setPreviewSession] =
-    useState<any>(null);
+  const [aiConfig, setAiConfig] = useState<AiConfig>({
+    provider: "gemini",
+    model: "gemini-2.5-flash",
+  });
 
-  const [previewInfo, setPreviewInfo] =
-    useState<any>(null);
-
-  const [lastResponse, setLastResponse] =
-    useState<GenerationResponse | null>(
-      null
-    );
-
-  const [templates, setTemplates] = useState<
-    any[]
-  >([]);
-
-  const [projectMemory, setProjectMemory] =
-    useState<any>(null);
-
-  const [isLoadingMemory, setIsLoadingMemory] =
-    useState(false);
-
-  const [buildMode, setBuildMode] =
-    useState<BuildMode>("virtual");
-
-  const [
-    autopilotTargetScore,
-    setAutopilotTargetScore,
-  ] = useState(90);
-
-  const [
-    autopilotMaxIterations,
-    setAutopilotMaxIterations,
-  ] = useState(5);
-
-  const [aiConfig, setAiConfig] =
-    useState<AiConfig>({
-      provider: "gemini",
-      model: "gemini-2.5-flash",
-    });
-
-  const previewPollRef =
-    useRef<number>();
+  const previewPollRef = useRef<number>();
 
   const activeProject = useMemo(
-    () =>
-      projects.find(
-        (project) =>
-          project.id === activeProjectId
-      ) || null,
+    () => projects.find((project) => project.id === activeProjectId) || null,
     [projects, activeProjectId]
   );
+
   const storageSize = useMemo(() => {
     try {
       return measureStoragePayload(projects);
@@ -338,351 +294,189 @@ export default function App() {
 
     return (
       activeProject.files.find(
-        (file) =>
-          normalizePath(file.path) ===
-          normalizePath(selectedPath)
+        (file) => normalizePath(file.path) === normalizePath(selectedPath)
       ) || null
     );
   }, [activeProject, selectedPath]);
+
+  const activeAutonomousJob = useMemo(
+    () => autonomousJobs.find((job) => job.id === activeAutonomousJobId) || null,
+    [autonomousJobs, activeAutonomousJobId]
+  );
 
   useEffect(() => {
     safeSaveProjects(projects);
   }, [projects]);
 
   useEffect(() => {
-    listTemplates()
-      .then(setTemplates)
-      .catch(() => {});
+    listTemplates().then(setTemplates).catch(() => {});
+    handleCheckApiHealth();
+    handleLoadAutonomousJobs();
   }, []);
 
   useEffect(() => {
     if (!activeJobId) return;
 
-    const interval = window.setInterval(
-      async () => {
-        try {
-          const job = await getJob(
-            activeJobId
-          );
+    const interval = window.setInterval(async () => {
+      try {
+        const job = await getJob(activeJobId);
 
-          setGenerationJob(job);
+        setGenerationJob(job);
 
-          if (
-            job.logs?.length
-          ) {
-            setAutopilotLogs(
-              job.logs
-            );
-          }
-
-          if (
-            job.status === "success" &&
-            job.result
-          ) {
-            const baseProject =
-              activeProject ||
-              createEmptyProject(
-                prompt
-              );
-
-            if (
-              job.result.iterations &&
-              job.result.files
-            ) {
-              const latestIteration =
-                job.result.iterations.at(
-                  -1
-                ) as
-                  | GenerationResponse
-                  | undefined;
-
-              updateProject({
-                ...baseProject,
-                prompt,
-                files:
-                  job.result.files,
-                updatedAt: now(),
-                score:
-                  latestIteration?.score,
-                nextActions:
-                  latestIteration?.nextActions ||
-                  [],
-                commits: [
-                  {
-                    id: uid(),
-                    message: `Autopilot completed. Final score: ${job.result.finalScore}`,
-                    timestamp:
-                      now(),
-                    files:
-                      job.result.files,
-                    score:
-                      latestIteration?.score,
-                  },
-                  ...(baseProject.commits ||
-                    []),
-                ],
-              });
-
-              setLastResponse(
-                latestIteration || {
-                  files:
-                    job.result.files,
-                  changelog: `Autopilot completed. Final score: ${job.result.finalScore}`,
-                  estimatedTimeSaved:
-                    "Several hours saved.",
-                  score:
-                    latestIteration?.score,
-                  nextActions:
-                    latestIteration?.nextActions ||
-                    [],
-                  mode:
-                    "improve",
-                }
-              );
-
-              setAutopilotLogs(
-                job.result.logs ||
-                  []
-              );
-
-              setIsAutopilotRunning(
-                false
-              );
-
-              setSelectedPath(
-                job.result.files?.[0]
-                  ?.path || ""
-              );
-            } else {
-              const response =
-                job.result as GenerationResponse;
-
-              const merged =
-                mergeFiles(
-                  baseProject.files ||
-                    [],
-                  response.files ||
-                    []
-                );
-
-              updateProject({
-                ...baseProject,
-                prompt,
-                files: merged,
-                updatedAt: now(),
-                score:
-                  response.score,
-                nextActions:
-                  response.nextActions ||
-                  [],
-                commits: [
-                  {
-                    id: uid(),
-                    message:
-                      response.changelog ||
-                      "AI generation job",
-                    timestamp:
-                      now(),
-                    files:
-                      response.files ||
-                      [],
-                    score:
-                      response.score,
-                  },
-                  ...(baseProject.commits ||
-                    []),
-                ],
-              });
-
-              setLastResponse(
-                response
-              );
-
-              setSelectedPath(
-                response.files?.[0]
-                  ?.path ||
-                  merged[0]
-                    ?.path ||
-                  ""
-              );
-            }
-
-            setIsGenerating(
-              false
-            );
-
-            setActiveJobId("");
-
-            clearInterval(
-              interval
-            );
-          }
-
-          if (
-            job.status === "error"
-          ) {
-            setError(
-              job.error ||
-                "Job failed."
-            );
-
-            setIsGenerating(
-              false
-            );
-
-            setIsAutopilotRunning(
-              false
-            );
-
-            setActiveJobId("");
-
-            clearInterval(
-              interval
-            );
-          }
-        } catch {
-          clearInterval(
-            interval
-          );
+        if (job.logs?.length) {
+          setAutopilotLogs(job.logs);
         }
-      },
-      2000
-    );
 
-    return () =>
-      clearInterval(interval);
-  }, [
-    activeJobId,
-    activeProject,
-    prompt,
-  ]);
+        if (job.status === "success" && job.result) {
+          const baseProject = activeProject || createEmptyProject(prompt);
+
+          if (job.result.iterations && job.result.files) {
+            const latestIteration = job.result.iterations.at(-1) as
+              | GenerationResponse
+              | undefined;
+
+            updateProject({
+              ...baseProject,
+              prompt,
+              files: job.result.files,
+              updatedAt: now(),
+              score: latestIteration?.score,
+              nextActions: latestIteration?.nextActions || [],
+              commits: [
+                {
+                  id: uid(),
+                  message: `Autopilot completed. Final score: ${job.result.finalScore}`,
+                  timestamp: now(),
+                  files: job.result.files,
+                  score: latestIteration?.score,
+                },
+                ...(baseProject.commits || []),
+              ],
+            });
+
+            setLastResponse(
+              latestIteration || {
+                files: job.result.files,
+                changelog: `Autopilot completed. Final score: ${job.result.finalScore}`,
+                estimatedTimeSaved: "Several hours saved.",
+                score: latestIteration?.score as any,
+                nextActions: latestIteration?.nextActions || [],
+                mode: "improve",
+              }
+            );
+
+            setAutopilotLogs(job.result.logs || []);
+            setIsAutopilotRunning(false);
+            setSelectedPath(job.result.files?.[0]?.path || "");
+          } else {
+            const response = job.result as GenerationResponse;
+            const merged = mergeFiles(baseProject.files || [], response.files || []);
+
+            updateProject({
+              ...baseProject,
+              prompt,
+              files: merged,
+              updatedAt: now(),
+              score: response.score,
+              nextActions: response.nextActions || [],
+              commits: [
+                {
+                  id: uid(),
+                  message: response.changelog || "AI generation job",
+                  timestamp: now(),
+                  files: response.files || [],
+                  score: response.score,
+                },
+                ...(baseProject.commits || []),
+              ],
+            });
+
+            setLastResponse(response);
+            setSelectedPath(response.files?.[0]?.path || merged[0]?.path || "");
+          }
+
+          setIsGenerating(false);
+          setActiveJobId("");
+          clearInterval(interval);
+        }
+
+        if (job.status === "error") {
+          setError(job.error || "Job failed.");
+          setIsGenerating(false);
+          setIsAutopilotRunning(false);
+          setActiveJobId("");
+          clearInterval(interval);
+        }
+      } catch {
+        clearInterval(interval);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [activeJobId, activeProject, prompt]);
 
   useEffect(() => {
-    if (
-      !previewSession?.id
-    ) {
-      return;
-    }
+    if (!previewSession?.id) return;
 
-    previewPollRef.current =
-      window.setInterval(
-        async () => {
-          try {
-            const session =
-              await getPreview(
-                previewSession.id
-              );
-
-            setPreviewInfo(
-              session
-            );
-          } catch {}
-        },
-        2000
-      );
+    previewPollRef.current = window.setInterval(async () => {
+      try {
+        const session = await getPreview(previewSession.id);
+        setPreviewInfo(session);
+      } catch {}
+    }, 2000);
 
     return () => {
-      if (
-        previewPollRef.current
-      ) {
-        clearInterval(
-          previewPollRef.current
-        );
+      if (previewPollRef.current) {
+        clearInterval(previewPollRef.current);
       }
     };
   }, [previewSession]);
 
-  function pushAutopilotLog(
-    message: string
-  ) {
-    setAutopilotLogs(
-      (previous) => [
-        `${new Date().toISOString()} · ${message}`,
-        ...previous,
-      ]
-    );
+  function updateProject(project: Project) {
+    setProjects((previous) => {
+      const exists = previous.some((item) => item.id === project.id);
+
+      if (!exists) return [project, ...previous];
+
+      return previous.map((item) => (item.id === project.id ? project : item));
+    });
+
+    setActiveProjectId(project.id);
   }
 
-  function updateProject(
-    project: Project
-  ) {
-    setProjects(
-      (previous) => {
-        const exists =
-          previous.some(
-            (item) =>
-              item.id ===
-              project.id
-          );
+  function pushAutopilotLog(message: string) {
+    setAutopilotLogs((previous) => [
+      `${new Date().toISOString()} · ${message}`,
+      ...previous,
+    ]);
+  }
 
-        if (!exists) {
-          return [
-            project,
-            ...previous,
-          ];
-        }
-
-        return previous.map(
-          (item) =>
-            item.id ===
-            project.id
-              ? project
-              : item
-        );
-      }
-    );
-
-    setActiveProjectId(
-      project.id
+  function pushAutoRunLog(message: string) {
+    setAutoRunLogs((previous) =>
+      [`${new Date().toISOString()} · ${message}`, ...previous].slice(0, 120)
     );
   }
 
   function recoverBackupProjects() {
-    const backup =
-      safeLoadBackupProjects();
+    const backup = safeLoadBackupProjects();
 
     if (!backup.length) {
-      setError(
-        "No backup found."
-      );
-
+      setError("No backup found.");
       return;
     }
 
     setProjects(backup);
-
-    setActiveProjectId(
-      backup[0]?.id || ""
-    );
-
-    setSelectedPath(
-      backup[0]?.files?.[0]
-        ?.path || ""
-    );
-
+    setActiveProjectId(backup[0]?.id || "");
+    setSelectedPath(backup[0]?.files?.[0]?.path || "");
     setError("");
   }
 
-  function updateFileContent(
-    path: string,
-    content: string
-  ) {
-    if (!activeProject)
-      return;
+  function updateFileContent(path: string, content: string) {
+    if (!activeProject) return;
 
-    const updatedFiles =
-      activeProject.files.map(
-        (file) =>
-          normalizePath(
-            file.path
-          ) ===
-          normalizePath(path)
-            ? {
-                ...file,
-                content,
-              }
-            : file
-      );
+    const updatedFiles = activeProject.files.map((file) =>
+      normalizePath(file.path) === normalizePath(path) ? { ...file, content } : file
+    );
 
     updateProject({
       ...activeProject,
@@ -692,8 +486,7 @@ export default function App() {
   }
 
   function createNewProject() {
-    const project =
-      createEmptyProject();
+    const project = createEmptyProject();
 
     updateProject(project);
 
@@ -702,20 +495,16 @@ export default function App() {
     setLastResponse(null);
     setBuildResult(null);
     setInspection(null);
-    setDependencyResolution(
-      null
-    );
+    setDependencyResolution(null);
     setPublishReport(null);
     setPreviewSession(null);
     setPreviewInfo(null);
     setProjectMemory(null);
     setError("");
-}
+  }
 
-function deleteProject(projectId: string) {
-    const filtered = projects.filter(
-      (project) => project.id !== projectId
-    );
+  function deleteProject(projectId: string) {
+    const filtered = projects.filter((project) => project.id !== projectId);
 
     setProjects(filtered);
 
@@ -738,24 +527,19 @@ function deleteProject(projectId: string) {
   function duplicateProject() {
     if (!activeProject) return;
 
-    const copy: Project = {
+    updateProject({
       ...activeProject,
       id: uid(),
       name: `${activeProject.name} Copy`,
       createdAt: now(),
       updatedAt: now(),
-    };
-
-    updateProject(copy);
+    });
   }
 
   function restoreCommit(commit: Commit) {
     if (!activeProject) return;
 
-    const restoredFiles = mergeFiles(
-      activeProject.files,
-      commit.files
-    );
+    const restoredFiles = mergeFiles(activeProject.files, commit.files);
 
     updateProject({
       ...activeProject,
@@ -789,31 +573,19 @@ function deleteProject(projectId: string) {
   function addFile() {
     if (!activeProject) return;
 
-    const fileName = window.prompt(
-      "File path:",
-      "/src/new-file.ts"
-    );
-
+    const fileName = window.prompt("File path:", "/src/new-file.ts");
     if (!fileName) return;
 
     const path = normalizePath(fileName);
 
-    if (
-      activeProject.files.some(
-        (file) => normalizePath(file.path) === path
-      )
-    ) {
+    if (activeProject.files.some((file) => normalizePath(file.path) === path)) {
       setError("File already exists.");
       return;
     }
 
-    const updatedFiles = [
-      ...activeProject.files,
-      {
-        path,
-        content: "",
-      },
-    ].sort((a, b) => a.path.localeCompare(b.path));
+    const updatedFiles = [...activeProject.files, { path, content: "" }].sort((a, b) =>
+      a.path.localeCompare(b.path)
+    );
 
     updateProject({
       ...activeProject,
@@ -828,9 +600,7 @@ function deleteProject(projectId: string) {
     if (!activeProject || !selectedFile) return;
 
     const updatedFiles = activeProject.files.filter(
-      (file) =>
-        normalizePath(file.path) !==
-        normalizePath(selectedFile.path)
+      (file) => normalizePath(file.path) !== normalizePath(selectedFile.path)
     );
 
     updateProject({
@@ -840,6 +610,48 @@ function deleteProject(projectId: string) {
     });
 
     setSelectedPath(updatedFiles[0]?.path || "");
+  }
+
+  async function handleCheckApiHealth() {
+    setApiStatus("unknown");
+    setApiStatusMessage("Checking API...");
+
+    try {
+      const health = await checkApiHealth();
+
+      if (health.ok) {
+        setApiStatus("online");
+        setApiStatusMessage(
+          `${health.service || "AutoApp API"} online · ${health.runtime || "worker"}`
+        );
+      } else {
+        setApiStatus("offline");
+        setApiStatusMessage("API returned an invalid health response.");
+      }
+    } catch (err: any) {
+      setApiStatus("offline");
+      setApiStatusMessage(err?.message || "API unreachable.");
+    }
+  }
+
+  async function handleTestGemini() {
+    setAiStatus("unknown");
+    setAiStatusMessage("Testing Gemini...");
+
+    try {
+      const result = await testGeminiApi();
+
+      if (result.ok) {
+        setAiStatus("ready");
+        setAiStatusMessage("Gemini ready.");
+      } else {
+        setAiStatus("error");
+        setAiStatusMessage(result.error || "Gemini test failed.");
+      }
+    } catch (err: any) {
+      setAiStatus("error");
+      setAiStatusMessage(err?.message || "Gemini test failed.");
+    }
   }
 
   async function handleGenerate(auto = false) {
@@ -852,10 +664,13 @@ function deleteProject(projectId: string) {
 
     setError("");
     setIsGenerating(true);
+    setLastResponse(null);
+    setBuildResult(null);
+    setPublishReport(null);
+    setDependencyResolution(null);
 
     try {
-      const baseProject =
-        activeProject || createEmptyProject(finalPrompt);
+      const baseProject = activeProject || createEmptyProject(finalPrompt);
 
       const response = await generateProject({
         projectId: baseProject.id,
@@ -863,13 +678,10 @@ function deleteProject(projectId: string) {
         currentFiles: baseProject.files,
         isAutoImprove: auto,
         aiConfig,
-        buildMode,
+        buildMode: IS_CLOUDFLARE_FREE_MODE ? "virtual" : buildMode,
       });
 
-      const merged = mergeFiles(
-        baseProject.files,
-        response.files || []
-      );
+      const merged = mergeFiles(baseProject.files, response.files || []);
 
       updateProject({
         ...baseProject,
@@ -881,9 +693,7 @@ function deleteProject(projectId: string) {
         commits: [
           {
             id: uid(),
-            message:
-              response.changelog ||
-              "AI generation",
+            message: response.changelog || "AI generation",
             timestamp: now(),
             files: response.files || [],
             score: response.score,
@@ -895,13 +705,21 @@ function deleteProject(projectId: string) {
       setLastResponse(response);
       setSelectedPath(response.files?.[0]?.path || merged[0]?.path || "");
     } catch (err: any) {
-      setError(err?.message || "Generation failed.");
+      setError(
+        err?.message ||
+          "Generation failed. Try a shorter prompt or improve the project in smaller steps."
+      );
     } finally {
       setIsGenerating(false);
     }
   }
 
   async function handleGenerateJob(auto = false) {
+    if (IS_CLOUDFLARE_FREE_MODE) {
+      await handleGenerate(auto);
+      return;
+    }
+
     const finalPrompt = prompt.trim();
 
     if (!finalPrompt) {
@@ -914,8 +732,7 @@ function deleteProject(projectId: string) {
     setGenerationJob(null);
 
     try {
-      const baseProject =
-        activeProject || createEmptyProject(finalPrompt);
+      const baseProject = activeProject || createEmptyProject(finalPrompt);
 
       const jobId = await startGenerationJob({
         projectId: baseProject.id,
@@ -934,6 +751,11 @@ function deleteProject(projectId: string) {
   }
 
   async function handleAutopilot() {
+    if (IS_CLOUDFLARE_FREE_MODE) {
+      setError("Autopilot server jobs are disabled on Cloudflare Free. Use Improve instead.");
+      return;
+    }
+
     if (!activeProject) {
       setError("Create a project first.");
       return;
@@ -947,10 +769,7 @@ function deleteProject(projectId: string) {
     try {
       const jobId = await startAutopilotJob({
         projectId: activeProject.id,
-        prompt:
-          activeProject.prompt ||
-          prompt ||
-          "Improve this project until it is production-ready.",
+        prompt: activeProject.prompt || prompt || "Improve this project until production-ready.",
         files: activeProject.files,
         aiConfig,
         buildMode,
@@ -974,14 +793,14 @@ function deleteProject(projectId: string) {
 
   async function runAction(action: string) {
     setPrompt(action);
-    await handleGenerateJob(true);
+    await handleGenerate(true);
   }
 
   async function runAllActions() {
     if (!activeProject?.nextActions?.length) return;
 
     setPrompt(activeProject.nextActions.join("\n"));
-    await handleGenerateJob(true);
+    await handleGenerate(true);
   }
 
   async function handleBuildCheck() {
@@ -992,16 +811,16 @@ function deleteProject(projectId: string) {
     try {
       const result = await checkBuild({
         files: activeProject.files,
-        mode: buildMode,
+        mode: IS_CLOUDFLARE_FREE_MODE ? "virtual" : buildMode,
       });
 
       setBuildResult(result);
     } catch (err: any) {
       setError(err?.message || "Build check failed.");
     }
-      }
+  }
 
-async function handleScoreProject() {
+  async function handleScoreProject() {
     if (!activeProject) return;
 
     try {
@@ -1244,6 +1063,203 @@ async function handleScoreProject() {
     }
   }
 
+  async function handleCreateAutonomousJob() {
+    const finalPrompt = prompt.trim();
+
+    if (!finalPrompt) {
+      setError("Prompt required.");
+      return;
+    }
+
+    setIsStartingAutonomousJob(true);
+    setIsAutoRunningJob(true);
+    setAutoRunLogs([]);
+    setError("");
+
+    try {
+      const result = await createAutonomousJob({
+        prompt: finalPrompt,
+      });
+
+      setActiveAutonomousJobId(result.jobId);
+      setAutoRunJobId(result.jobId);
+      pushAutoRunLog(`Created autonomous job ${result.jobId}`);
+
+      await handleLoadAutonomousJobs();
+      await runAutonomousJobUntilPauseOrDone(result.jobId);
+    } catch (err: any) {
+      setError(err?.message || "Autonomous job creation failed.");
+      pushAutoRunLog(err?.message || "Autonomous job creation failed.");
+    } finally {
+      setIsStartingAutonomousJob(false);
+      setIsAutoRunningJob(false);
+    }
+  }
+
+  async function handleLoadAutonomousJobs() {
+    try {
+      const jobs = await listAutonomousJobs();
+      setAutonomousJobs(jobs);
+    } catch (err: any) {
+      setError(err?.message || "Could not load autonomous jobs.");
+    }
+  }
+
+  async function handleRunAutonomousStep(jobId: string) {
+    try {
+      await runAutonomousJobStep(jobId);
+      await handleLoadAutonomousJobs();
+    } catch (err: any) {
+      setError(err?.message || "Autonomous step failed.");
+    }
+  }
+
+  async function handleResumeAutonomousJob(jobId: string) {
+    try {
+      await resumeAutonomousJob(jobId);
+      await handleLoadAutonomousJobs();
+    } catch (err: any) {
+      setError(err?.message || "Autonomous resume failed.");
+    }
+  }
+
+  async function handleImportAutonomousJobFiles(jobId: string) {
+    try {
+      const result = await getAutonomousJobFiles(jobId);
+      const project = createEmptyProject(prompt || "Autonomous project");
+
+      updateProject({
+        ...project,
+        name: `Autonomous ${result.phase}`,
+        prompt,
+        files: result.files,
+        updatedAt: now(),
+        commits: [
+          {
+            id: uid(),
+            message: `Imported autonomous job ${jobId}`,
+            timestamp: now(),
+            files: result.files,
+          },
+        ],
+      });
+
+      setSelectedPath(result.files?.[0]?.path || "");
+    } catch (err: any) {
+      setError(err?.message || "Could not import autonomous files.");
+    }
+  }
+
+  async function runAutonomousJobUntilPauseOrDone(jobId: string) {
+    const maxLocalSteps = 6;
+
+    for (let step = 1; step <= maxLocalSteps; step++) {
+      pushAutoRunLog(`Running local step ${step}/${maxLocalSteps}`);
+
+      const job = await runAutonomousJobStep(jobId);
+
+      pushAutoRunLog(`Phase: ${job.phase} · Status: ${job.status} · Score: ${job.score}/100`);
+
+      await handleLoadAutonomousJobs();
+
+      if (job.status === "done") {
+        pushAutoRunLog("Job completed.");
+
+        try {
+          await handleImportAutonomousJobFiles(jobId);
+          pushAutoRunLog("Final files imported into workspace.");
+        } catch {
+          pushAutoRunLog("Job completed, but import failed.");
+        }
+
+        return;
+      }
+
+      if (job.status === "paused" || job.status === "error") {
+        pushAutoRunLog("Job paused. Cron will resume later, or use Resume manually.");
+        return;
+      }
+
+      await wait(2000);
+    }
+
+    pushAutoRunLog("Local auto-run limit reached. Cron will continue later automatically.");
+  }
+
+  async function handleRunUntilReady(jobId: string) {
+    setIsRunningUntilReady(true);
+    setIsAutoRunningJob(true);
+    setError("");
+
+    try {
+      const maxLocalSteps = 10;
+
+      for (let step = 1; step <= maxLocalSteps; step++) {
+        pushAutoRunLog(`Continue until 90+ · step ${step}/${maxLocalSteps}`);
+
+        const job = await runAutonomousJobStep(jobId);
+
+        pushAutoRunLog(`Phase: ${job.phase} · Status: ${job.status} · Score: ${job.score}/100`);
+
+        await handleLoadAutonomousJobs();
+
+        if (job.score >= 90 && job.status === "done") {
+          pushAutoRunLog("Target reached: score 90+ and job done.");
+          await handleImportAutonomousJobFiles(jobId);
+          pushAutoRunLog("Files imported.");
+          return;
+        }
+
+        if (job.score >= 90) {
+          pushAutoRunLog("Score 90+ reached. Loading final report.");
+          await handleLoadAutonomousReport(jobId);
+          return;
+        }
+
+        if (job.status === "paused" || job.status === "error") {
+          pushAutoRunLog("Job paused. Cron will continue later.");
+          return;
+        }
+
+        await wait(2000);
+      }
+
+      pushAutoRunLog("Local limit reached. Cron will keep improving this job automatically.");
+    } catch (err: any) {
+      setError(err?.message || "Continue until ready failed.");
+      pushAutoRunLog(err?.message || "Continue until ready failed.");
+    } finally {
+      setIsRunningUntilReady(false);
+      setIsAutoRunningJob(false);
+    }
+  }
+
+  async function handleLoadAutonomousReport(jobId: string) {
+    try {
+      const report = await getAutonomousJobReport(jobId);
+      setAutonomousReport(report);
+    } catch (err: any) {
+      setError(err?.message || "Could not load autonomous report.");
+    }
+  }
+
+  async function handleExportAutonomousJobZip(jobId: string) {
+    try {
+      const files = await getAutonomousJobZipFiles(jobId);
+
+      if (!files.length) {
+        setError("No files found for this autonomous job.");
+        return;
+      }
+
+      const job = autonomousJobs.find((item) => item.id === jobId);
+
+      downloadZip(files, `autoapp-${job?.target || "project"}-${jobId.slice(0, 8)}`);
+    } catch (err: any) {
+      setError(err?.message || "Could not export autonomous ZIP.");
+    }
+  }
+
   const healthScore = activeProject?.score;
 
   return (
@@ -1252,14 +1268,8 @@ async function handleScoreProject() {
         <header className="mb-4 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">
-                Forge
-              </p>
-
-              <h1 className="text-3xl font-black tracking-tight">
-                AI App Builder
-              </h1>
-
+              <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Forge</p>
+              <h1 className="text-3xl font-black tracking-tight">AI App Builder</h1>
               <p className="mt-1 text-sm text-zinc-400">
                 Generate, repair, preview, score and export app projects.
               </p>
@@ -1314,9 +1324,7 @@ async function handleScoreProject() {
                   type="file"
                   accept="application/json,.json"
                   className="hidden"
-                  onChange={(event) =>
-                    handleImportProjectJson(event.target.files?.[0])
-                  }
+                  onChange={(event) => handleImportProjectJson(event.target.files?.[0])}
                 />
               </label>
 
@@ -1452,12 +1460,12 @@ async function handleScoreProject() {
                 <div>
                   <h2 className="text-sm font-bold">Prompt</h2>
                   <p className="text-xs text-zinc-500">
-                    Describe the app or the improvement task.
+                    Describe the app or autonomous build target.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {(["none", "virtual", "real"] as BuildMode[]).map((mode) => (
+                  {(["none", "virtual"] as BuildMode[]).map((mode) => (
                     <button
                       key={mode}
                       type="button"
@@ -1477,7 +1485,7 @@ async function handleScoreProject() {
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Create a premium mobile-first SaaS dashboard..."
+                placeholder="Create a complete Android-ready addictive mobile game with sprites, animations, scoring and progression..."
                 className="min-h-36 w-full resize-none rounded-3xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none placeholder:text-zinc-600"
               />
 
@@ -1489,23 +1497,15 @@ async function handleScoreProject() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
-                  onClick={() => handleGenerateJob(false)}
+                  onClick={() => handleGenerate(false)}
                   disabled={isGenerating}
                   className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-50"
                 >
-                  {isGenerating ? "Generating..." : "Generate Job"}
+                  {isGenerating ? "Generating..." : "Generate"}
                 </button>
 
                 <button
-                  onClick={() => handleGenerate(false)}
-                  disabled={isGenerating}
-                  className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold hover:bg-white/10 disabled:opacity-50"
-                >
-                  Generate Sync
-                </button>
-
-                <button
-                  onClick={() => handleGenerateJob(true)}
+                  onClick={() => handleGenerate(true)}
                   disabled={isGenerating || !activeProject?.files?.length}
                   className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold hover:bg-white/10 disabled:opacity-50"
                 >
@@ -1513,11 +1513,27 @@ async function handleScoreProject() {
                 </button>
 
                 <button
+                  onClick={handleCreateAutonomousJob}
+                  disabled={isStartingAutonomousJob || isGenerating}
+                  className="rounded-2xl border border-emerald-400/20 px-5 py-3 text-sm font-bold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+                >
+                  {isStartingAutonomousJob ? "Starting..." : "Autonomous Build"}
+                </button>
+
+                <button
                   onClick={handleAutopilot}
-                  disabled={isAutopilotRunning || !activeProject?.files?.length}
+                  disabled={
+                    IS_CLOUDFLARE_FREE_MODE ||
+                    isAutopilotRunning ||
+                    !activeProject?.files?.length
+                  }
                   className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold hover:bg-white/10 disabled:opacity-50"
                 >
-                  {isAutopilotRunning ? "Autopilot..." : "Autopilot"}
+                  {IS_CLOUDFLARE_FREE_MODE
+                    ? "Autopilot disabled"
+                    : isAutopilotRunning
+                      ? "Autopilot..."
+                      : "Autopilot"}
                 </button>
 
                 <button
@@ -1539,25 +1555,19 @@ async function handleScoreProject() {
                     min={50}
                     max={100}
                     value={autopilotTargetScore}
-                    onChange={(event) =>
-                      setAutopilotTargetScore(Number(event.target.value))
-                    }
+                    onChange={(event) => setAutopilotTargetScore(Number(event.target.value))}
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
                   />
                 </label>
 
                 <label>
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    Max iterations
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">Max iterations</span>
                   <input
                     type="number"
                     min={1}
                     max={10}
                     value={autopilotMaxIterations}
-                    onChange={(event) =>
-                      setAutopilotMaxIterations(Number(event.target.value))
-                    }
+                    onChange={(event) => setAutopilotMaxIterations(Number(event.target.value))}
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
                   />
                 </label>
@@ -1566,83 +1576,18 @@ async function handleScoreProject() {
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
               <div className="mb-3 flex flex-wrap gap-2">
-                <button
-                  onClick={handleBuildCheck}
-                  disabled={!activeProject}
-                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
-                >
-                  Build Check
-                </button>
-
-                <button
-                  onClick={handleScoreProject}
-                  disabled={!activeProject}
-                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
-                >
-                  Score
-                </button>
-
-                <button
-                  onClick={handleInspectProject}
-                  disabled={!activeProject}
-                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
-                >
-                  Inspect
-                </button>
-
-                <button
-                  onClick={() => handleResolveDependencies(false)}
-                  disabled={!activeProject}
-                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
-                >
-                  Deps
-                </button>
-
-                <button
-                  onClick={() => handleResolveDependencies(true)}
-                  disabled={!activeProject}
-                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
-                >
-                  Fix Deps
-                </button>
-
-                <button
-                  onClick={handleCreateDeploymentPack}
-                  disabled={!activeProject}
-                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
-                >
-                  Deploy Pack
-                </button>
-
-                <button
-                  onClick={handleCreatePublishReport}
-                  disabled={!activeProject}
-                  className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40"
-                >
-                  Publish Report
-                </button>
-
-                <button
-                  onClick={handleStartPreview}
-                  disabled={!activeProject?.files?.length}
-                  className="rounded-2xl bg-white px-4 py-2 text-xs font-bold text-black disabled:opacity-40"
-                >
-                  Start Preview
-                </button>
-
-                <button
-                  onClick={handleStopPreview}
-                  disabled={!previewSession?.id}
-                  className="rounded-2xl border border-red-400/20 px-4 py-2 text-xs font-bold text-red-300 disabled:opacity-40"
-                >
-                  Stop Preview
-                </button>
+                <button onClick={handleBuildCheck} disabled={!activeProject} className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40">Build Check</button>
+                <button onClick={handleScoreProject} disabled={!activeProject} className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40">Score</button>
+                <button onClick={handleInspectProject} disabled={!activeProject} className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40">Inspect</button>
+                <button onClick={() => handleResolveDependencies(false)} disabled={!activeProject} className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40">Deps</button>
+                <button onClick={() => handleResolveDependencies(true)} disabled={!activeProject} className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40">Fix Deps</button>
+                <button onClick={handleCreateDeploymentPack} disabled={!activeProject} className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40">Deploy Pack</button>
+                <button onClick={handleCreatePublishReport} disabled={!activeProject} className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold hover:bg-white/10 disabled:opacity-40">Publish Report</button>
+                <button onClick={handleStartPreview} disabled={!activeProject?.files?.length} className="rounded-2xl bg-white px-4 py-2 text-xs font-bold text-black disabled:opacity-40">Start Preview</button>
+                <button onClick={handleStopPreview} disabled={!previewSession?.id} className="rounded-2xl border border-red-400/20 px-4 py-2 text-xs font-bold text-red-300 disabled:opacity-40">Stop Preview</button>
               </div>
 
-              <PreviewPanel
-                files={activeProject?.files || []}
-                session={previewInfo}
-              />
+              <PreviewPanel files={activeProject?.files || []} session={previewInfo} />
             </section>
 
             <section className="grid gap-4 lg:grid-cols-2">
@@ -1721,21 +1666,281 @@ async function handleScoreProject() {
           </section>
 
           <aside className="space-y-4">
+            <StatusPanel
+              title="API Status"
+              message={apiStatusMessage || "Not checked yet."}
+              status={apiStatus}
+              onClick={handleCheckApiHealth}
+              button="Check API"
+            />
+
+            <StatusPanel
+              title="Gemini Status"
+              message={aiStatusMessage || "Not tested yet."}
+              status={aiStatus}
+              onClick={handleTestGemini}
+              button="Test Gemini"
+            />
+
+            <section className="rounded-3xl border border-amber-400/20 bg-amber-500/10 p-4 shadow-2xl">
+              <h2 className="text-sm font-bold text-amber-200">Cloudflare Free Mode</h2>
+              <p className="mt-2 text-xs leading-6 text-amber-100/80">
+                Backend gratuit actif. Les générations directes fonctionnent, mais les jobs
+                longs, la vraie preview serveur et les builds réels sont limités.
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <InfoMini label="Generate" value="ON" />
+                <InfoMini label="Autopilot jobs" value="OFF" danger />
+                <InfoMini label="Real build" value="OFF" danger />
+                <InfoMini label="Static preview" value="ON" ok />
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-bold text-emerald-200">Autonomous Jobs</h2>
+                  <p className="mt-1 text-xs text-emerald-100/70">
+                    Persistent D1 jobs that continue later with Cron.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleLoadAutonomousJobs}
+                    className="rounded-xl border border-emerald-300/20 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-400/10"
+                  >
+                    Refresh
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (activeAutonomousJobId) {
+                        setIsAutoRunningJob(true);
+                        runAutonomousJobUntilPauseOrDone(activeAutonomousJobId)
+                          .catch((err) => {
+                            setError(err?.message || "Auto-run failed.");
+                            pushAutoRunLog(err?.message || "Auto-run failed.");
+                          })
+                          .finally(() => setIsAutoRunningJob(false));
+                      }
+                    }}
+                    disabled={!activeAutonomousJobId || isAutoRunningJob}
+                    className="rounded-xl border border-emerald-300/20 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-40"
+                  >
+                    {isAutoRunningJob ? "Running..." : "Auto-run"}
+                  </button>
+                </div>
+              </div>
+
+              {activeAutonomousJob && (
+                <div className="mb-3 rounded-2xl border border-emerald-300/20 bg-black/25 p-3">
+                  <p className="text-xs font-bold text-emerald-100">Active autonomous build</p>
+                  <p className="mt-1 truncate text-[11px] text-emerald-100/70">
+                    {activeAutonomousJob.prompt}
+                  </p>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+                    <InfoBox label="Target" value={getTargetLabel(activeAutonomousJob.target)} />
+                    <InfoBox label="Phase" value={activeAutonomousJob.phase} />
+                    <InfoBox label="Score" value={`${activeAutonomousJob.score}/100`} />
+                  </div>
+
+                  <button
+                    onClick={() => handleRunUntilReady(activeAutonomousJobId)}
+                    disabled={!activeAutonomousJobId || isRunningUntilReady}
+                    className="mt-3 w-full rounded-2xl bg-amber-300 px-4 py-2 text-xs font-black text-black disabled:opacity-40"
+                  >
+                    {isRunningUntilReady ? "Improving..." : "Continue until 90+"}
+                  </button>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {autonomousJobs.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-emerald-300/20 p-3 text-xs text-emerald-100/60">
+                    No autonomous job yet.
+                  </p>
+                )}
+
+                {autonomousJobs.map((job) => (
+                  <article
+                    key={job.id}
+                    onClick={() => setActiveAutonomousJobId(job.id)}
+                    className={`rounded-2xl border p-3 ${
+                      activeAutonomousJobId === job.id
+                        ? "border-emerald-300/60 bg-emerald-400/10"
+                        : "border-emerald-300/20 bg-black/25"
+                    }`}
+                  >
+                    <p className="truncate text-xs font-bold text-white">{job.prompt}</p>
+
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <Pill>{getTargetLabel(job.target)}</Pill>
+                      <Pill>{job.status}</Pill>
+                      <Pill>{job.phase}</Pill>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                      <InfoBox label="Score" value={`${job.score}/100`} />
+                      <InfoBox label="Attempts" value={`${job.attempts}/${job.max_attempts}`} />
+                      <InfoBox label="Next run" value={formatRelativeTime(job.next_run_at)} />
+                      <InfoBox label="Updated" value={new Date(job.updated_at).toLocaleTimeString()} />
+                      <InfoBox label="Strategy" value={job.strategy || "normal"} />
+                      <InfoBox label="Stagnation" value={job.stagnant_steps || 0} />
+                      <InfoBox label="Last score" value={`${job.last_score || 0}/100`} />
+                    </div>
+
+                    {job.error && (
+                      <p className="mt-2 rounded-xl bg-red-500/10 p-2 text-[11px] text-red-200">
+                        {job.error}
+                      </p>
+                    )}
+
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/40">
+                      <div
+                        className="h-full rounded-full bg-emerald-300"
+                        style={{ width: `${Math.min(100, Math.max(5, job.score || 0))}%` }}
+                      />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleRunAutonomousStep(job.id);
+                        }}
+                        className="rounded-xl bg-emerald-300 px-3 py-1.5 text-[11px] font-black text-black"
+                      >
+                        Step
+                      </button>
+
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleResumeAutonomousJob(job.id);
+                        }}
+                        className="rounded-xl border border-emerald-300/20 px-3 py-1.5 text-[11px] font-bold text-emerald-100"
+                      >
+                        Resume
+                      </button>
+
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleRunUntilReady(job.id);
+                        }}
+                        disabled={isRunningUntilReady}
+                        className="rounded-xl border border-amber-300/20 px-3 py-1.5 text-[11px] font-bold text-amber-100 hover:bg-amber-400/10 disabled:opacity-40"
+                      >
+                        {isRunningUntilReady ? "Running..." : "Continue 90+"}
+                      </button>
+
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleImportAutonomousJobFiles(job.id);
+                        }}
+                        className="rounded-xl border border-white/10 px-3 py-1.5 text-[11px] font-bold text-white"
+                      >
+                        Import files
+                      </button>
+
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleExportAutonomousJobZip(job.id);
+                        }}
+                        className="rounded-xl border border-white/10 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-white/10"
+                      >
+                        Export ZIP
+                      </button>
+
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleLoadAutonomousReport(job.id);
+                        }}
+                        className="rounded-xl border border-cyan-300/20 px-3 py-1.5 text-[11px] font-bold text-cyan-100"
+                      >
+                        Report
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {autoRunLogs.length > 0 && (
+                <div className="mt-3 max-h-64 overflow-auto rounded-2xl bg-black/30 p-3">
+                  <p className="mb-2 text-xs font-bold text-emerald-100">Auto-run logs</p>
+
+                  {autoRunLogs.map((log, index) => (
+                    <p key={`${log}-${index}`} className="text-[11px] leading-5 text-emerald-100/70">
+                      {log}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {autonomousReport && (
+              <section className="rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-4 shadow-2xl">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-bold text-cyan-100">Autonomous Report</h2>
+                    <p className="mt-1 text-xs text-cyan-100/70">
+                      {autonomousReport.targetLabel} · {autonomousReport.readiness}
+                    </p>
+                  </div>
+
+                  <span className="rounded-full bg-black/30 px-3 py-1 text-xs font-black text-white">
+                    {autonomousReport.score?.total}/100
+                  </span>
+                </div>
+
+                <p className="rounded-2xl bg-black/25 p-3 text-xs leading-6 text-cyan-50/80">
+                  {autonomousReport.summary}
+                </p>
+
+                <button
+                  onClick={() => handleExportAutonomousJobZip(autonomousReport.id)}
+                  className="mt-3 rounded-2xl bg-cyan-200 px-4 py-2 text-xs font-black text-black"
+                >
+                  Export Report ZIP
+                </button>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <InfoBox label="Files" value={autonomousReport.files?.count || 0} />
+                  <InfoBox label="Assets" value={autonomousReport.files?.generatedAssets?.length || 0} />
+                  <InfoBox label="Build" value={autonomousReport.build?.ok ? "PASS" : "ISSUES"} />
+                  <InfoBox label="Android" value={autonomousReport.capabilities?.androidReady ? "READY" : "—"} />
+                </div>
+
+                {autonomousReport.nextActions?.length > 0 && (
+                  <div className="mt-3 rounded-2xl bg-black/25 p-3">
+                    <p className="mb-2 text-xs font-bold text-cyan-100">Next actions</p>
+
+                    <ul className="space-y-1 text-xs text-cyan-50/80">
+                      {autonomousReport.nextActions.map((action: string) => (
+                        <li key={action}>• {action}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </section>
+            )}
+
             <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
               <h2 className="mb-3 text-sm font-bold">AI Provider</h2>
 
               <div className="space-y-3">
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    Provider
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">Provider</span>
                   <select
                     value={aiConfig.provider || "gemini"}
                     onChange={(event) =>
-                      setAiConfig((previous) => ({
-                        ...previous,
-                        provider: event.target.value,
-                      }))
+                      setAiConfig((previous) => ({ ...previous, provider: event.target.value }))
                     }
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
                   >
@@ -1746,16 +1951,11 @@ async function handleScoreProject() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    Model
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">Model</span>
                   <input
                     value={aiConfig.model || ""}
                     onChange={(event) =>
-                      setAiConfig((previous) => ({
-                        ...previous,
-                        model: event.target.value,
-                      }))
+                      setAiConfig((previous) => ({ ...previous, model: event.target.value }))
                     }
                     placeholder="gemini-2.5-flash"
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none placeholder:text-zinc-700"
@@ -1763,34 +1963,24 @@ async function handleScoreProject() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    API key
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">API key</span>
                   <input
                     type="password"
                     value={aiConfig.apiKey || ""}
                     onChange={(event) =>
-                      setAiConfig((previous) => ({
-                        ...previous,
-                        apiKey: event.target.value,
-                      }))
+                      setAiConfig((previous) => ({ ...previous, apiKey: event.target.value }))
                     }
-                    placeholder="Optional if .env is configured"
+                    placeholder="Optional if Worker secret is configured"
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none placeholder:text-zinc-700"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">
-                    Base URL
-                  </span>
+                  <span className="mb-1 block text-xs text-zinc-500">Base URL</span>
                   <input
                     value={aiConfig.baseUrl || ""}
                     onChange={(event) =>
-                      setAiConfig((previous) => ({
-                        ...previous,
-                        baseUrl: event.target.value,
-                      }))
+                      setAiConfig((previous) => ({ ...previous, baseUrl: event.target.value }))
                     }
                     placeholder="https://api.groq.com/openai/v1"
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none placeholder:text-zinc-700"
@@ -1830,10 +2020,7 @@ async function handleScoreProject() {
 
                 <div className="space-y-2">
                   {activeProject.nextActions.map((action) => (
-                    <div
-                      key={action}
-                      className="rounded-2xl border border-white/10 bg-black/25 p-3"
-                    >
+                    <div key={action} className="rounded-2xl border border-white/10 bg-black/25 p-3">
                       <p className="text-xs leading-5 text-zinc-300">{action}</p>
 
                       <button
@@ -1851,13 +2038,7 @@ async function handleScoreProject() {
             {buildResult && (
               <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
                 <h2 className="mb-2 text-sm font-bold">Build result</h2>
-                <p
-                  className={
-                    buildResult.ok
-                      ? "text-sm font-bold text-emerald-300"
-                      : "text-sm font-bold text-red-300"
-                  }
-                >
+                <p className={buildResult.ok ? "text-sm font-bold text-emerald-300" : "text-sm font-bold text-red-300"}>
                   {buildResult.ok ? "PASS" : "FAIL"}
                 </p>
 
@@ -1893,26 +2074,12 @@ async function handleScoreProject() {
             {dependencyResolution && (
               <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
                 <h2 className="mb-3 text-sm font-bold">Dependencies</h2>
-
-                <p
-                  className={
-                    dependencyResolution.ok
-                      ? "text-sm font-bold text-emerald-300"
-                      : "text-sm font-bold text-amber-300"
-                  }
-                >
+                <p className={dependencyResolution.ok ? "text-sm font-bold text-emerald-300" : "text-sm font-bold text-amber-300"}>
                   {dependencyResolution.ok ? "OK" : "Needs update"}
                 </p>
 
-                <List
-                  title="Missing"
-                  items={dependencyResolution.missingDependencies || []}
-                />
-
-                <List
-                  title="Warnings"
-                  items={dependencyResolution.warnings || []}
-                />
+                <List title="Missing" items={dependencyResolution.missingDependencies || []} />
+                <List title="Warnings" items={dependencyResolution.warnings || []} />
               </section>
             )}
 
@@ -1920,13 +2087,7 @@ async function handleScoreProject() {
               <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
                 <h2 className="mb-3 text-sm font-bold">Publish report</h2>
 
-                <p
-                  className={
-                    publishReport.ready
-                      ? "text-sm font-bold text-emerald-300"
-                      : "text-sm font-bold text-red-300"
-                  }
-                >
+                <p className={publishReport.ready ? "text-sm font-bold text-emerald-300" : "text-sm font-bold text-red-300"}>
                   {publishReport.ready ? "READY" : "BLOCKED"} · {publishReport.score}/100
                 </p>
 
@@ -1950,17 +2111,10 @@ async function handleScoreProject() {
 
                 <div className="max-h-80 space-y-2 overflow-auto">
                   {activeProject.commits.map((commit) => (
-                    <div
-                      key={commit.id}
-                      className="rounded-2xl border border-white/10 bg-black/25 p-3"
-                    >
-                      <p className="line-clamp-3 text-xs text-zinc-300">
-                        {commit.message}
-                      </p>
-
+                    <div key={commit.id} className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                      <p className="line-clamp-3 text-xs text-zinc-300">{commit.message}</p>
                       <p className="mt-2 text-[11px] text-zinc-600">
-                        {new Date(commit.timestamp).toLocaleString()} ·{" "}
-                        {commit.files.length} files
+                        {new Date(commit.timestamp).toLocaleString()} · {commit.files.length} files
                       </p>
 
                       <button
@@ -1981,14 +2135,94 @@ async function handleScoreProject() {
   );
 }
 
+function StatusPanel({
+  title,
+  message,
+  status,
+  onClick,
+  button,
+}: {
+  title: string;
+  message: string;
+  status: string;
+  onClick: () => void;
+  button: string;
+}) {
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold text-white">{title}</h2>
+          <p className="mt-1 text-xs text-zinc-400">{message}</p>
+        </div>
+
+        <span
+          className={
+            status === "online" || status === "ready"
+              ? "rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-300"
+              : status === "offline" || status === "error"
+                ? "rounded-full bg-red-500/20 px-3 py-1 text-xs font-bold text-red-300"
+                : "rounded-full bg-zinc-500/20 px-3 py-1 text-xs font-bold text-zinc-300"
+          }
+        >
+          {status}
+        </span>
+      </div>
+
+      <button
+        onClick={onClick}
+        className="mt-3 rounded-2xl border border-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/10"
+      >
+        {button}
+      </button>
+    </section>
+  );
+}
+
 function Info({ label, value }: { label: string; value: any }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
       <p className="text-[11px] text-zinc-500">{label}</p>
-      <p className="mt-1 truncate text-xs font-bold text-white">
-        {String(value ?? "—")}
+      <p className="mt-1 truncate text-xs font-bold text-white">{String(value ?? "—")}</p>
+    </div>
+  );
+}
+
+function InfoBox({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="rounded-xl bg-black/30 p-2">
+      <p className="text-emerald-100/50">{label}</p>
+      <p className="mt-1 truncate font-black text-white">{String(value ?? "—")}</p>
+    </div>
+  );
+}
+
+function InfoMini({
+  label,
+  value,
+  danger,
+  ok,
+}: {
+  label: string;
+  value: any;
+  danger?: boolean;
+  ok?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl bg-black/25 p-3">
+      <p className="text-amber-200">{label}</p>
+      <p className={danger ? "mt-1 font-bold text-red-200" : ok ? "mt-1 font-bold text-emerald-200" : "mt-1 font-bold text-white"}>
+        {String(value)}
       </p>
     </div>
+  );
+}
+
+function Pill({ children }: { children: any }) {
+  return (
+    <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-200">
+      {children}
+    </span>
   );
 }
 
@@ -2005,4 +2239,4 @@ function List({ title, items = [] }: { title: string; items?: string[] }) {
       </ul>
     </div>
   );
-                      }
+}
