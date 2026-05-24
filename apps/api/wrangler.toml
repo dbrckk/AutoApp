@@ -1,8 +1,14 @@
 name = "autoapp-api"
 main = "src/worker.ts"
-compatibility_date = "2026-05-22"
+compatibility_date = "2026-05-01"
+
+workers_dev = true
 
 [vars]
 DEFAULT_AI_PROVIDER = "gemini"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-DEFAULT_OPENAI_MODEL = "llama-3.3-70b-versatile"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "autoapp-db"
+database_id = "7e243f65-5e04-4eda-a73a-09330834dc98"
