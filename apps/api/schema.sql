@@ -1,25 +1,50 @@
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
+
   prompt TEXT NOT NULL,
-  status TEXT NOT NULL,
-  phase TEXT NOT NULL,
-  target TEXT DEFAULT 'web-app',
-  score INTEGER DEFAULT 0,
-  attempts INTEGER DEFAULT 0,
-  max_attempts INTEGER DEFAULT 12,
-  files_json TEXT DEFAULT '[]',
-  logs_json TEXT DEFAULT '[]',
-  error TEXT,
+
+  status TEXT NOT NULL DEFAULT 'running',
+
+  phase TEXT NOT NULL DEFAULT 'product_spec',
+
+  target TEXT NOT NULL DEFAULT 'web-app',
+
+  score INTEGER NOT NULL DEFAULT 0,
+
+  attempts INTEGER NOT NULL DEFAULT 0,
+
+  max_attempts INTEGER NOT NULL DEFAULT 12,
+
+  files_json TEXT NOT NULL DEFAULT '[]',
+
+  logs_json TEXT NOT NULL DEFAULT '[]',
+
+  error TEXT DEFAULT '',
+
   created_at INTEGER NOT NULL,
+
   updated_at INTEGER NOT NULL,
+
   next_run_at INTEGER NOT NULL,
-  last_score INTEGER DEFAULT 0,
-  stagnant_steps INTEGER DEFAULT 0,
-  strategy TEXT DEFAULT 'normal'
+
+  last_score INTEGER NOT NULL DEFAULT 0,
+
+  stagnant_steps INTEGER NOT NULL DEFAULT 0,
+
+  strategy TEXT NOT NULL DEFAULT 'normal'
 );
 
-CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run
-ON jobs(status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_status
+ON jobs(status);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_phase
+ON jobs(phase);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_next_run
+ON jobs(next_run_at);
 
 CREATE INDEX IF NOT EXISTS idx_jobs_updated_at
 ON jobs(updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run
+ON jobs(status, next_run_at);
