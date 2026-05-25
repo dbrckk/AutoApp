@@ -403,4 +403,4 @@ export async function getAutonomousJobReport(jobId: string) {
   }>(`/api/jobs/${jobId}/report`);
 
   return data.report;
-      }
+  }
