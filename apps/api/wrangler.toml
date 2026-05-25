@@ -12,3 +12,6 @@ DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 binding = "DB"
 database_name = "autoapp-db"
 database_id = "7e243f65-5e04-4eda-a73a-09330834dc98"
+
+[triggers]
+crons = ["*/5 * * * *"]
