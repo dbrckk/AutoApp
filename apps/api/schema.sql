@@ -1,3 +1,18 @@
+CREATE TABLE IF NOT EXISTS project_memory (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  memory_type TEXT NOT NULL,
+  content_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_memory_project
+ON project_memory(project_id);
+
+CREATE INDEX IF NOT EXISTS idx_project_memory_type
+ON project_memory(memory_type);
+
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
 
