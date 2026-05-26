@@ -1,10 +1,12 @@
 export type Env = {
   DB?: D1Database;
   GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;
   DEFAULT_AI_PROVIDER?: string;
   DEFAULT_GEMINI_MODEL?: string;
+  DEFAULT_GROQ_MODEL?: string;
   DEFAULT_OPENAI_MODEL?: string;
 };
 
