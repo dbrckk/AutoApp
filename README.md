@@ -1,4 +1,4 @@
-# Forge AI App Builder
+# Forge AI App Builder 
 
 Forge is a local AI app builder that generates, improves, repairs, previews, scores and exports production-ready application projects.
 
