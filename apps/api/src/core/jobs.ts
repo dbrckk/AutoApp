@@ -1,10 +1,6 @@
 import type { Env, PersistentJob, VirtualFile } from "./types";
 
-import {
-  safeJsonArray,
-  mergeFiles,
-  normalizeGeneratedFiles,
-} from "./files";
+import { safeJsonArray, mergeFiles } from "./files";
 
 import {
   applyDependencyResolution,
@@ -13,21 +9,16 @@ import {
 } from "./build";
 
 import { scoreProject } from "./scoring";
-
 import { detectTarget } from "./targets";
-
-import {
-  AUTONOMOUS_PHASES,
-  buildPhasePrompt,
-} from "./prompts";
-
-import { callAiJson } from "./ai";
+import { AUTONOMOUS_PHASES, buildPhasePrompt } from "./prompts";
 
 import {
   createAndroidCapacitorFiles,
   createFinalPackagingFiles,
   createGeneratedGameAssets,
 } from "./assets";
+
+import { runAgentPipeline, selectAgentRoles } from "../agents/runner";
 
 export async function runScheduledJobs(env: Env) {
   if (!env.DB) return;
@@ -70,9 +61,7 @@ export async function createPersistentJob(
     attempts: 0,
     max_attempts: 12,
     files_json: "[]",
-    logs_json: JSON.stringify([
-      `${new Date().toISOString()} · Job created.`,
-    ]),
+    logs_json: JSON.stringify([`${new Date().toISOString()} · Job created.`]),
     error: "",
     created_at: now,
     updated_at: now,
@@ -82,27 +71,28 @@ export async function createPersistentJob(
     strategy: "normal",
   };
 
-  await db.prepare(
-    `INSERT INTO jobs (
-      id,
-      prompt,
-      status,
-      phase,
-      target,
-      score,
-      attempts,
-      max_attempts,
-      files_json,
-      logs_json,
-      error,
-      created_at,
-      updated_at,
-      next_run_at,
-      last_score,
-      stagnant_steps,
-      strategy
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
+  await db
+    .prepare(
+      `INSERT INTO jobs (
+        id,
+        prompt,
+        status,
+        phase,
+        target,
+        score,
+        attempts,
+        max_attempts,
+        files_json,
+        logs_json,
+        error,
+        created_at,
+        updated_at,
+        next_run_at,
+        last_score,
+        stagnant_steps,
+        strategy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
     .bind(
       job.id,
       job.prompt,
@@ -183,28 +173,26 @@ export async function listPersistentJobs(db: D1Database) {
   }));
 }
 
-export async function savePersistentJob(
-  db: D1Database,
-  job: PersistentJob
-) {
+export async function savePersistentJob(db: D1Database, job: PersistentJob) {
   job.updated_at = Date.now();
 
-  await db.prepare(
-    `UPDATE jobs SET
-      status = ?,
-      phase = ?,
-      score = ?,
-      attempts = ?,
-      files_json = ?,
-      logs_json = ?,
-      error = ?,
-      last_score = ?,
-      stagnant_steps = ?,
-      strategy = ?,
-      updated_at = ?,
-      next_run_at = ?
-    WHERE id = ?`
-  )
+  await db
+    .prepare(
+      `UPDATE jobs SET
+        status = ?,
+        phase = ?,
+        score = ?,
+        attempts = ?,
+        files_json = ?,
+        logs_json = ?,
+        error = ?,
+        last_score = ?,
+        stagnant_steps = ?,
+        strategy = ?,
+        updated_at = ?,
+        next_run_at = ?
+      WHERE id = ?`
+    )
     .bind(
       job.status,
       job.phase,
@@ -225,10 +213,7 @@ export async function savePersistentJob(
   return job;
 }
 
-export async function resumePersistentJob(
-  db: D1Database,
-  id: string
-) {
+export async function resumePersistentJob(db: D1Database, id: string) {
   const job = await getPersistentJob(db, id);
 
   if (!job) {
@@ -242,10 +227,7 @@ export async function resumePersistentJob(
   return savePersistentJob(db, job);
 }
 
-export async function runPersistentJobStep(
-  env: Env,
-  id: string
-) {
+export async function runPersistentJobStep(env: Env, id: string) {
   if (!env.DB) {
     throw new Error("D1 DB binding missing");
   }
@@ -282,37 +264,41 @@ export async function runPersistentJobStep(
     const buildBefore = virtualBuildCheck(files);
     const scoreBefore = scoreProject(files);
 
-    const output = await callAiJson(
-      env,
-      {},
-      buildPhasePrompt({
-        phase: job.phase,
-        prompt: job.prompt,
-        target: job.target,
-        files,
-        build: buildBefore,
-        score: scoreBefore,
-        strategy: job.strategy || "normal",
-      })
-    );
+    const roles = selectAgentRoles({
+      target: job.target,
+      build: buildBefore,
+      score: scoreBefore,
+      phase: job.phase,
+      strategy: job.strategy || "normal",
+    });
 
-    let nextFiles = mergeFiles(
+    const phasePrompt = buildPhasePrompt({
+      phase: job.phase,
+      prompt: job.prompt,
+      target: job.target,
       files,
-      normalizeGeneratedFiles(output?.files || [])
-    );
+      build: buildBefore,
+      score: scoreBefore,
+      strategy: job.strategy || "normal",
+    });
+
+    const pipeline = await runAgentPipeline({
+      env,
+      aiConfig: {},
+      userPrompt: phasePrompt,
+      files,
+      target: job.target,
+      roles,
+    });
+
+    let nextFiles = pipeline.files;
 
     if (job.phase === "sprites_and_assets") {
-      nextFiles = mergeFiles(
-        nextFiles,
-        createGeneratedGameAssets(job.prompt)
-      );
+      nextFiles = mergeFiles(nextFiles, createGeneratedGameAssets(job.prompt));
     }
 
     if (job.target.includes("android")) {
-      nextFiles = mergeFiles(
-        nextFiles,
-        createAndroidCapacitorFiles(job.prompt)
-      );
+      nextFiles = mergeFiles(nextFiles, createAndroidCapacitorFiles(job.prompt));
     }
 
     nextFiles = applyDependencyResolution(
@@ -371,7 +357,9 @@ export async function runPersistentJobStep(
 
     appendJobLog(
       job,
-      `${completedPhase}: score ${score.total}/100 · strategy ${job.strategy} · next ${job.phase}`
+      `${completedPhase}: agents ${roles.join(", ")} · score ${
+        score.total
+      }/100 · strategy ${job.strategy} · next ${job.phase}`
     );
 
     await savePersistentJob(env.DB, job);
@@ -432,10 +420,7 @@ export function publicJob(job: PersistentJob) {
   };
 }
 
-export function appendJobLog(
-  job: PersistentJob,
-  message: string
-) {
+export function appendJobLog(job: PersistentJob, message: string) {
   const logs = safeJsonArray(job.logs_json) as string[];
 
   logs.unshift(`${new Date().toISOString()} · ${message}`);
@@ -504,6 +489,7 @@ export function getNextPhaseWithStrategy({
   if (strategy === "force_assets") return "sprites_and_assets";
   if (strategy === "force_feedback") return "animations_and_feedback";
   if (strategy === "repair") return "repair";
+
   if (strategy === "finalize" && score.total >= 82) {
     return "final_packaging";
   }
