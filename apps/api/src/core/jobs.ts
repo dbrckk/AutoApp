@@ -1,6 +1,13 @@
-import type { Env, PersistentJob, VirtualFile } from "./types";
+import type {
+  Env,
+  PersistentJob,
+  VirtualFile,
+} from "./types";
 
-import { safeJsonArray, mergeFiles } from "./files";
+import {
+  safeJsonArray,
+  mergeFiles,
+} from "./files";
 
 import {
   applyDependencyResolution,
@@ -10,7 +17,11 @@ import {
 
 import { scoreProject } from "./scoring";
 import { detectTarget } from "./targets";
-import { AUTONOMOUS_PHASES, buildPhasePrompt } from "./prompts";
+
+import {
+  AUTONOMOUS_PHASES,
+  buildPhasePrompt,
+} from "./prompts";
 
 import {
   createAndroidCapacitorFiles,
@@ -18,26 +29,35 @@ import {
   createGeneratedGameAssets,
 } from "./assets";
 
-import { runAgentPipeline, selectAgentRoles } from "../agents/runner";
+import {
+  runAgentPipeline,
+  selectAgentRoles,
+} from "../agents/runner";
 
 export async function runScheduledJobs(env: Env) {
   if (!env.DB) return;
 
   const result = await env.DB.prepare(
-    `SELECT id FROM jobs
-     WHERE status IN ('running', 'paused')
-     AND next_run_at <= ?
-     ORDER BY updated_at ASC
-     LIMIT 3`
+    `
+    SELECT id
+    FROM jobs
+    WHERE status IN ('running', 'paused')
+    AND next_run_at <= ?
+    ORDER BY updated_at ASC
+    LIMIT 3
+    `
   )
     .bind(Date.now())
     .all();
 
   for (const item of result.results || []) {
     try {
-      await runPersistentJobStep(env, String((item as any).id));
+      await runPersistentJobStep(
+        env,
+        String((item as any).id)
+      );
     } catch {
-      // Keep cron safe.
+      // Prevent cron crash.
     }
   }
 }
@@ -56,12 +76,16 @@ export async function createPersistentJob(
     prompt: input.prompt,
     status: "running",
     phase: "product_spec",
-    target: input.target || detectTarget(input.prompt),
+    target:
+      input.target ||
+      detectTarget(input.prompt),
     score: 0,
     attempts: 0,
     max_attempts: 12,
     files_json: "[]",
-    logs_json: JSON.stringify([`${new Date().toISOString()} · Job created.`]),
+    logs_json: JSON.stringify([
+      `${new Date().toISOString()} · Job created.`,
+    ]),
     error: "",
     created_at: now,
     updated_at: now,
@@ -73,7 +97,8 @@ export async function createPersistentJob(
 
   await db
     .prepare(
-      `INSERT INTO jobs (
+      `
+      INSERT INTO jobs (
         id,
         prompt,
         status,
@@ -91,7 +116,9 @@ export async function createPersistentJob(
         last_score,
         stagnant_steps,
         strategy
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
     )
     .bind(
       job.id,
@@ -122,17 +149,28 @@ export async function getPersistentJob(
   id: string
 ): Promise<PersistentJob | null> {
   const row = await db
-    .prepare("SELECT * FROM jobs WHERE id = ?")
+    .prepare(
+      `
+      SELECT *
+      FROM jobs
+      WHERE id = ?
+      `
+    )
     .bind(id)
     .first();
 
-  return row ? hydratePersistentJob(row as any) : null;
+  return row
+    ? hydratePersistentJob(row as any)
+    : null;
 }
 
-export async function listPersistentJobs(db: D1Database) {
+export async function listPersistentJobs(
+  db: D1Database
+) {
   const result = await db
     .prepare(
-      `SELECT
+      `
+      SELECT
         id,
         prompt,
         status,
@@ -150,35 +188,55 @@ export async function listPersistentJobs(db: D1Database) {
         strategy
       FROM jobs
       ORDER BY updated_at DESC
-      LIMIT 30`
+      LIMIT 30
+      `
     )
     .all();
 
-  return (result.results || []).map((row: any) => ({
-    id: row.id,
-    prompt: row.prompt,
-    status: row.status,
-    phase: row.phase,
-    target: row.target,
-    score: Number(row.score || 0),
-    attempts: Number(row.attempts || 0),
-    max_attempts: Number(row.max_attempts || 12),
-    error: row.error || "",
-    created_at: Number(row.created_at || 0),
-    updated_at: Number(row.updated_at || 0),
-    next_run_at: Number(row.next_run_at || 0),
-    last_score: Number(row.last_score || 0),
-    stagnant_steps: Number(row.stagnant_steps || 0),
-    strategy: row.strategy || "normal",
-  }));
+  return (result.results || []).map(
+    (row: any) => ({
+      id: row.id,
+      prompt: row.prompt,
+      status: row.status,
+      phase: row.phase,
+      target: row.target,
+      score: Number(row.score || 0),
+      attempts: Number(row.attempts || 0),
+      max_attempts: Number(
+        row.max_attempts || 12
+      ),
+      error: row.error || "",
+      created_at: Number(
+        row.created_at || 0
+      ),
+      updated_at: Number(
+        row.updated_at || 0
+      ),
+      next_run_at: Number(
+        row.next_run_at || 0
+      ),
+      last_score: Number(
+        row.last_score || 0
+      ),
+      stagnant_steps: Number(
+        row.stagnant_steps || 0
+      ),
+      strategy: row.strategy || "normal",
+    })
+  );
 }
 
-export async function savePersistentJob(db: D1Database, job: PersistentJob) {
+export async function savePersistentJob(
+  db: D1Database,
+  job: PersistentJob
+) {
   job.updated_at = Date.now();
 
   await db
     .prepare(
-      `UPDATE jobs SET
+      `
+      UPDATE jobs
+      SET
         status = ?,
         phase = ?,
         score = ?,
@@ -191,7 +249,8 @@ export async function savePersistentJob(db: D1Database, job: PersistentJob) {
         strategy = ?,
         updated_at = ?,
         next_run_at = ?
-      WHERE id = ?`
+      WHERE id = ?
+      `
     )
     .bind(
       job.status,
@@ -213,8 +272,14 @@ export async function savePersistentJob(db: D1Database, job: PersistentJob) {
   return job;
 }
 
-export async function resumePersistentJob(db: D1Database, id: string) {
-  const job = await getPersistentJob(db, id);
+export async function resumePersistentJob(
+  db: D1Database,
+  id: string
+) {
+  const job = await getPersistentJob(
+    db,
+    id
+  );
 
   if (!job) {
     throw new Error("Job not found");
@@ -227,12 +292,20 @@ export async function resumePersistentJob(db: D1Database, id: string) {
   return savePersistentJob(db, job);
 }
 
-export async function runPersistentJobStep(env: Env, id: string) {
+export async function runPersistentJobStep(
+  env: Env,
+  id: string
+) {
   if (!env.DB) {
-    throw new Error("D1 DB binding missing");
+    throw new Error(
+      "D1 DB binding missing"
+    );
   }
 
-  const job = await getPersistentJob(env.DB, id);
+  const job = await getPersistentJob(
+    env.DB,
+    id
+  );
 
   if (!job) {
     throw new Error("Job not found");
@@ -242,74 +315,119 @@ export async function runPersistentJobStep(env: Env, id: string) {
     return job;
   }
 
-  if (job.status === "paused" && job.next_run_at > Date.now()) {
+  if (
+    job.status === "paused" &&
+    job.next_run_at > Date.now()
+  ) {
     return job;
   }
 
   if (job.attempts >= job.max_attempts) {
     job.status = "paused";
     job.error = "Max attempts reached.";
-    job.next_run_at = Date.now() + 10 * 60_000;
-    appendJobLog(job, "Paused: max attempts reached.");
+    job.next_run_at =
+      Date.now() + 10 * 60_000;
+
+    appendJobLog(
+      job,
+      "Paused: max attempts reached."
+    );
 
     await savePersistentJob(env.DB, job);
+
     return job;
   }
 
   try {
-    const files = safeJsonArray(job.files_json) as VirtualFile[];
+    const files = safeJsonArray(
+      job.files_json
+    ) as VirtualFile[];
 
-    appendJobLog(job, `Running phase: ${job.phase}`);
+    appendJobLog(
+      job,
+      `Running phase: ${job.phase}`
+    );
 
-    const buildBefore = virtualBuildCheck(files);
-    const scoreBefore = scoreProject(files);
+    const buildBefore =
+      virtualBuildCheck(files);
+
+    const scoreBefore =
+      scoreProject(files);
 
     const roles = selectAgentRoles({
       target: job.target,
       build: buildBefore,
       score: scoreBefore,
       phase: job.phase,
-      strategy: job.strategy || "normal",
+      strategy:
+        job.strategy || "normal",
     });
 
-    const phasePrompt = buildPhasePrompt({
-      phase: job.phase,
-      prompt: job.prompt,
-      target: job.target,
-      files,
-      build: buildBefore,
-      score: scoreBefore,
-      strategy: job.strategy || "normal",
-    });
+    const phasePrompt =
+      buildPhasePrompt({
+        phase: job.phase,
+        prompt: job.prompt,
+        target: job.target,
+        files,
+        build: buildBefore,
+        score: scoreBefore,
+        strategy:
+          job.strategy || "normal",
+      });
 
-    const pipeline = await runAgentPipeline({
-      env,
-      aiConfig: {},
-      userPrompt: phasePrompt,
-      files,
-      target: job.target,
-      roles,
-    });
+    const pipeline =
+      await runAgentPipeline({
+        env,
+        aiConfig: {},
+        userPrompt: phasePrompt,
+        files,
+        target: job.target,
+        roles,
+        phase: job.phase,
+      });
 
     let nextFiles = pipeline.files;
 
-    if (job.phase === "sprites_and_assets") {
-      nextFiles = mergeFiles(nextFiles, createGeneratedGameAssets(job.prompt));
+    if (
+      job.phase ===
+      "sprites_and_assets"
+    ) {
+      nextFiles = mergeFiles(
+        nextFiles,
+        createGeneratedGameAssets(
+          job.prompt
+        )
+      );
     }
 
-    if (job.target.includes("android")) {
-      nextFiles = mergeFiles(nextFiles, createAndroidCapacitorFiles(job.prompt));
+    if (
+      job.target.includes("android")
+    ) {
+      nextFiles = mergeFiles(
+        nextFiles,
+        createAndroidCapacitorFiles(
+          job.prompt
+        )
+      );
     }
 
-    nextFiles = applyDependencyResolution(
-      nextFiles,
-      resolveDependencies(nextFiles).packageJson
-    );
+    nextFiles =
+      applyDependencyResolution(
+        nextFiles,
+        resolveDependencies(nextFiles)
+          .packageJson
+      );
 
-    let build = virtualBuildCheck(nextFiles);
-    let score = scoreProject(nextFiles);
+    let build =
+      virtualBuildCheck(nextFiles);
 
-    if (job.phase === "final_packaging") {
+    let score =
+      scoreProject(nextFiles);
+
+    if (
+      job.phase ===
+      "final_packaging"
+    ) {
       nextFiles = mergeFiles(
         nextFiles,
         createFinalPackagingFiles({
@@ -320,87 +438,154 @@ export async function runPersistentJobStep(env: Env, id: string) {
         })
       );
 
-      build = virtualBuildCheck(nextFiles);
-      score = scoreProject(nextFiles);
+      build =
+        virtualBuildCheck(nextFiles);
+
+      score =
+        scoreProject(nextFiles);
     }
 
-    const previousScore = Number(job.score || job.last_score || 0);
-    const improvement = score.total - previousScore;
+    const previousScore = Number(
+      job.score ||
+        job.last_score ||
+        0
+    );
+
+    const improvement =
+      score.total - previousScore;
 
     job.last_score = previousScore;
+
     job.stagnant_steps =
-      improvement <= 1 ? Number(job.stagnant_steps || 0) + 1 : 0;
+      improvement <= 1
+        ? Number(
+            job.stagnant_steps || 0
+          ) + 1
+        : 0;
 
-    job.strategy = chooseNextStrategy({
-      job,
-      phase: job.phase,
-      build,
-      score,
-      improvement,
-    });
+    job.strategy =
+      chooseNextStrategy({
+        job,
+        phase: job.phase,
+        build,
+        score,
+        improvement,
+      });
 
-    const completedPhase = job.phase;
+    const completedPhase =
+      job.phase;
 
-    job.phase = getNextPhaseWithStrategy({
-      phase: completedPhase,
-      build,
-      score,
-      job,
-    });
+    job.phase =
+      getNextPhaseWithStrategy({
+        phase: completedPhase,
+        build,
+        score,
+        job,
+      });
 
     job.score = score.total;
     job.attempts += 1;
-    job.files_json = JSON.stringify(nextFiles);
+    job.files_json =
+      JSON.stringify(nextFiles);
     job.error = "";
-    job.status = job.phase === "done" ? "done" : "running";
-    job.next_run_at = Date.now() + 5 * 60_000;
+
+    job.status =
+      job.phase === "done"
+        ? "done"
+        : "running";
+
+    job.next_run_at =
+      Date.now() + 5 * 60_000;
 
     appendJobLog(
       job,
-      `${completedPhase}: agents ${roles.join(", ")} · score ${
+      `${completedPhase}: agents ${roles.join(
+        ", "
+      )} · score ${
         score.total
-      }/100 · strategy ${job.strategy} · next ${job.phase}`
+      }/100 · strategy ${
+        job.strategy
+      } · next ${job.phase}`
     );
 
-    await savePersistentJob(env.DB, job);
+    await savePersistentJob(
+      env.DB,
+      job
+    );
 
     return job;
   } catch (error: any) {
     job.status = "running";
-    job.error = error?.message || "Step failed";
-    job.next_run_at = Date.now() + 10 * 60_000;
 
-    appendJobLog(job, `Paused after error: ${job.error}`);
+    job.error =
+      error?.message || "Step failed";
 
-    await savePersistentJob(env.DB, job);
+    job.next_run_at =
+      Date.now() + 10 * 60_000;
+
+    appendJobLog(
+      job,
+      `Paused after error: ${job.error}`
+    );
+
+    await savePersistentJob(
+      env.DB,
+      job
+    );
 
     return job;
   }
 }
 
-export function hydratePersistentJob(row: any): PersistentJob {
+export function hydratePersistentJob(
+  row: any
+): PersistentJob {
   return {
     id: String(row.id),
     prompt: String(row.prompt || ""),
-    status: row.status || "running",
-    phase: row.phase || "product_spec",
-    target: row.target || "web-app",
+    status:
+      row.status || "running",
+    phase:
+      row.phase || "product_spec",
+    target:
+      row.target || "web-app",
     score: Number(row.score || 0),
-    attempts: Number(row.attempts || 0),
-    max_attempts: Number(row.max_attempts || 12),
-    files_json: String(row.files_json || "[]"),
-    logs_json: String(row.logs_json || "[]"),
+    attempts: Number(
+      row.attempts || 0
+    ),
+    max_attempts: Number(
+      row.max_attempts || 12
+    ),
+    files_json: String(
+      row.files_json || "[]"
+    ),
+    logs_json: String(
+      row.logs_json || "[]"
+    ),
     error: row.error || "",
-    created_at: Number(row.created_at || 0),
-    updated_at: Number(row.updated_at || 0),
-    next_run_at: Number(row.next_run_at || 0),
-    last_score: Number(row.last_score || 0),
-    stagnant_steps: Number(row.stagnant_steps || 0),
-    strategy: row.strategy || "normal",
+    created_at: Number(
+      row.created_at || 0
+    ),
+    updated_at: Number(
+      row.updated_at || 0
+    ),
+    next_run_at: Number(
+      row.next_run_at || 0
+    ),
+    last_score: Number(
+      row.last_score || 0
+    ),
+    stagnant_steps: Number(
+      row.stagnant_steps || 0
+    ),
+    strategy:
+      row.strategy || "normal",
   };
 }
 
-export function publicJob(job: PersistentJob) {
+export function publicJob(
+  job: PersistentJob
+) {
   return {
     id: job.id,
     prompt: job.prompt,
@@ -409,23 +594,37 @@ export function publicJob(job: PersistentJob) {
     target: job.target,
     score: job.score,
     attempts: job.attempts,
-    max_attempts: job.max_attempts,
+    max_attempts:
+      job.max_attempts,
     error: job.error || "",
     created_at: job.created_at,
     updated_at: job.updated_at,
-    next_run_at: job.next_run_at,
-    last_score: job.last_score || 0,
-    stagnant_steps: job.stagnant_steps || 0,
-    strategy: job.strategy || "normal",
+    next_run_at:
+      job.next_run_at,
+    last_score:
+      job.last_score || 0,
+    stagnant_steps:
+      job.stagnant_steps || 0,
+    strategy:
+      job.strategy || "normal",
   };
 }
 
-export function appendJobLog(job: PersistentJob, message: string) {
-  const logs = safeJsonArray(job.logs_json) as string[];
+export function appendJobLog(
+  job: PersistentJob,
+  message: string
+) {
+  const logs = safeJsonArray(
+    job.logs_json
+  ) as string[];
 
-  logs.unshift(`${new Date().toISOString()} · ${message}`);
+  logs.unshift(
+    `${new Date().toISOString()} · ${message}`
+  );
 
-  job.logs_json = JSON.stringify(logs.slice(0, 250));
+  job.logs_json = JSON.stringify(
+    logs.slice(0, 250)
+  );
 }
 
 export function chooseNextStrategy({
@@ -441,25 +640,59 @@ export function chooseNextStrategy({
   score: any;
   improvement: number;
 }) {
-  if (!build.ok) return "repair";
+  if (!build.ok) {
+    return "repair";
+  }
 
-  if (Number(job.stagnant_steps || 0) >= 3) {
-    if (score.productDepth < 80) return "force_product_depth";
-    if (score.ui < 85) return "force_ui";
-    if (score.mobile < 85) return "force_mobile";
-    if (score.reliability < 85) return "force_reliability";
-    if (score.seo < 75) return "force_seo";
+  if (
+    Number(job.stagnant_steps || 0) >=
+    3
+  ) {
+    if (score.productDepth < 80) {
+      return "force_product_depth";
+    }
+
+    if (score.ui < 85) {
+      return "force_ui";
+    }
+
+    if (score.mobile < 85) {
+      return "force_mobile";
+    }
+
+    if (score.reliability < 85) {
+      return "force_reliability";
+    }
 
     return "finalize";
   }
 
-  if (improvement >= 5) return "normal";
+  if (improvement >= 5) {
+    return "normal";
+  }
 
-  if (phase === "sprites_and_assets") return "force_assets";
-  if (phase === "animations_and_feedback") return "force_feedback";
-  if (phase === "final_packaging") return "finalize";
+  if (
+    phase === "sprites_and_assets"
+  ) {
+    return "force_assets";
+  }
 
-  return job.strategy || "normal";
+  if (
+    phase ===
+    "animations_and_feedback"
+  ) {
+    return "force_feedback";
+  }
+
+  if (
+    phase === "final_packaging"
+  ) {
+    return "finalize";
+  }
+
+  return (
+    job.strategy || "normal"
+  );
 }
 
 export function getNextPhaseWithStrategy({
@@ -473,34 +706,80 @@ export function getNextPhaseWithStrategy({
   score: any;
   job: PersistentJob;
 }) {
-  if (!build.ok) return "repair";
+  if (!build.ok) {
+    return "repair";
+  }
 
-  const strategy = job.strategy || "normal";
+  const strategy =
+    job.strategy || "normal";
 
-  if (score.total >= 92 && build.ok) {
+  if (
+    score.total >= 92 &&
+    build.ok
+  ) {
     return "done";
   }
 
-  if (strategy === "force_product_depth") return "core_features";
-  if (strategy === "force_ui") return "ui_system";
-  if (strategy === "force_mobile") return "ui_system";
-  if (strategy === "force_reliability") return "animations_and_feedback";
-  if (strategy === "force_seo") return "launch_pack";
-  if (strategy === "force_assets") return "sprites_and_assets";
-  if (strategy === "force_feedback") return "animations_and_feedback";
-  if (strategy === "repair") return "repair";
+  if (
+    strategy ===
+    "force_product_depth"
+  ) {
+    return "core_features";
+  }
 
-  if (strategy === "finalize" && score.total >= 82) {
+  if (strategy === "force_ui") {
+    return "ui_system";
+  }
+
+  if (
+    strategy === "force_mobile"
+  ) {
+    return "ui_system";
+  }
+
+  if (
+    strategy ===
+    "force_reliability"
+  ) {
+    return "animations_and_feedback";
+  }
+
+  if (
+    strategy === "force_assets"
+  ) {
+    return "sprites_and_assets";
+  }
+
+  if (
+    strategy === "force_feedback"
+  ) {
+    return "animations_and_feedback";
+  }
+
+  if (strategy === "repair") {
+    return "repair";
+  }
+
+  if (
+    strategy === "finalize" &&
+    score.total >= 82
+  ) {
     return "final_packaging";
   }
 
-  const index = AUTONOMOUS_PHASES.indexOf(phase);
+  const index =
+    AUTONOMOUS_PHASES.indexOf(
+      phase
+    );
 
   if (index < 0) {
     return "product_spec";
   }
 
   return AUTONOMOUS_PHASES[
-    Math.min(index + 1, AUTONOMOUS_PHASES.length - 1)
+    Math.min(
+      index + 1,
+      AUTONOMOUS_PHASES.length - 1
+    )
   ];
-}
+    }
