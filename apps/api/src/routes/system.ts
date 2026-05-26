@@ -1,0 +1,187 @@
+import { Hono } from "hono";
+
+import type { Env } from "../core/types";
+
+import { callGemini } from "../core/ai";
+import { cleanFiles } from "../core/files";
+import {
+  applyDependencyResolution,
+  resolveDependencies,
+  virtualBuildCheck,
+} from "../core/build";
+import { scoreProject } from "../core/scoring";
+import { inspectProject } from "../core/inspect";
+import { listTemplates } from "../core/templates";
+import {
+  createDeploymentPack,
+  createEmptyMemory,
+} from "../core/templates";
+import { createPublishReport } from "../core/reports";
+
+export const systemRoutes = new Hono<{
+  Bindings: Env;
+}>();
+
+systemRoutes.get("/health", (c) =>
+  c.json({
+    ok: true,
+    service: "AutoApp API",
+    runtime: "cloudflare-workers",
+    timestamp: Date.now(),
+  })
+);
+
+systemRoutes.get("/ai/test", async (c) => {
+  try {
+    const result = await callGemini(
+      c.env,
+      {
+        model: c.env.DEFAULT_GEMINI_MODEL || "gemini-2.5-flash",
+      },
+      'Return ONLY this JSON: {"ok":true,"message":"Gemini ready"}'
+    );
+
+    return c.json({
+      ok: true,
+      provider: "gemini",
+      result,
+    });
+  } catch (error: any) {
+    return c.json(
+      {
+        ok: false,
+        provider: "gemini",
+        error: error?.message || "Gemini test failed",
+      },
+      500
+    );
+  }
+});
+
+systemRoutes.post("/build/check", async (c) => {
+  const body = await c.req.json().catch(() => null);
+
+  return c.json(
+    virtualBuildCheck(cleanFiles(body?.files || []))
+  );
+});
+
+systemRoutes.post("/score", async (c) => {
+  const body = await c.req.json().catch(() => null);
+
+  return c.json({
+    ok: true,
+    score: scoreProject(cleanFiles(body?.files || [])),
+  });
+});
+
+systemRoutes.post("/inspect", async (c) => {
+  const body = await c.req.json().catch(() => null);
+
+  return c.json({
+    ok: true,
+    inspection: inspectProject(cleanFiles(body?.files || [])),
+  });
+});
+
+systemRoutes.post("/dependencies/resolve", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const files = cleanFiles(body?.files || []);
+  const resolution = resolveDependencies(files);
+
+  return c.json({
+    ok: true,
+    resolution,
+    files: body?.apply
+      ? applyDependencyResolution(files, resolution.packageJson)
+      : undefined,
+  });
+});
+
+systemRoutes.get("/templates", (c) =>
+  c.json({
+    ok: true,
+    templates: listTemplates(),
+  })
+);
+
+systemRoutes.post("/templates/apply", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const template = listTemplates().find((item) => item.id === body?.id);
+
+  if (!template) {
+    return c.json({ error: "Template not found" }, 404);
+  }
+
+  return c.json({
+    ok: true,
+    template,
+  });
+});
+
+systemRoutes.post("/deployment/pack", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const files = cleanFiles(body?.files || []);
+  const additions = createDeploymentPack(files);
+
+  return c.json({
+    ok: true,
+    files: additions,
+    count: additions.length,
+  });
+});
+
+systemRoutes.post("/publish/report", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const files = cleanFiles(body?.files || []);
+
+  return c.json({
+    ok: true,
+    report: createPublishReport(files),
+  });
+});
+
+systemRoutes.get("/memory/:projectId", (c) =>
+  c.json({
+    ok: true,
+    memory: createEmptyMemory(c.req.param("projectId")),
+  })
+);
+
+systemRoutes.delete("/memory/:projectId", (c) =>
+  c.json({
+    ok: true,
+    memory: createEmptyMemory(c.req.param("projectId")),
+  })
+);
+
+systemRoutes.post("/preview/start", async (c) =>
+  c.json({
+    ok: true,
+    session: {
+      id: crypto.randomUUID(),
+      status: "running",
+      url: "",
+      logs: ["Static preview only on free Cloudflare stack."],
+    },
+  })
+);
+
+systemRoutes.get("/preview/:id", (c) =>
+  c.json({
+    id: c.req.param("id"),
+    status: "running",
+    url: "",
+    logs: ["Static preview only on free Cloudflare stack."],
+  })
+);
+
+systemRoutes.delete("/preview/:id", (c) =>
+  c.json({
+    ok: true,
+    session: {
+      id: c.req.param("id"),
+      status: "stopped",
+    },
+  })
+);
