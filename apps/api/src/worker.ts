@@ -8,6 +8,7 @@ import { generateRoutes } from "./routes/generate";
 import { systemRoutes } from "./routes/system";
 import { asyncRoutes, getMemoryJob } from "./routes/async";
 import { diagnosticsRoutes } from "./routes/diagnostics";
+import { githubRoutes } from "./routes/github";
 
 import { runScheduledJobs } from "./core/jobs";
 
@@ -39,6 +40,7 @@ app.route("/api/generate", generateRoutes);
 app.route("/api", asyncRoutes);
 app.route("/api", systemRoutes);
 app.route("/api/diagnostics", diagnosticsRoutes);
+app.route("/api/github", githubRoutes);
 
 app.notFound((c) =>
   c.json(
