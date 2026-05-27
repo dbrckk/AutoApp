@@ -34,19 +34,22 @@ import {
   selectAgentRoles,
 } from "../agents/runner";
 
+import { exportFilesToGitHub } from "../routes/github";
+
 export async function runScheduledJobs(env: Env) {
   if (!env.DB) return;
 
-  const result = await env.DB.prepare(
-    `
-    SELECT id
-    FROM jobs
-    WHERE status IN ('running', 'paused')
-    AND next_run_at <= ?
-    ORDER BY updated_at ASC
-    LIMIT 3
-    `
-  )
+  const result = await env.DB
+    .prepare(
+      `
+      SELECT id
+      FROM jobs
+      WHERE status IN ('running', 'paused')
+      AND next_run_at <= ?
+      ORDER BY updated_at ASC
+      LIMIT 3
+      `
+    )
     .bind(Date.now())
     .all();
 
@@ -201,7 +204,9 @@ export async function listPersistentJobs(
       phase: row.phase,
       target: row.target,
       score: Number(row.score || 0),
-      attempts: Number(row.attempts || 0),
+      attempts: Number(
+        row.attempts || 0
+      ),
       max_attempts: Number(
         row.max_attempts || 12
       ),
@@ -221,7 +226,8 @@ export async function listPersistentJobs(
       stagnant_steps: Number(
         row.stagnant_steps || 0
       ),
-      strategy: row.strategy || "normal",
+      strategy:
+        row.strategy || "normal",
     })
   );
 }
@@ -276,10 +282,8 @@ export async function resumePersistentJob(
   db: D1Database,
   id: string
 ) {
-  const job = await getPersistentJob(
-    db,
-    id
-  );
+  const job =
+    await getPersistentJob(db, id);
 
   if (!job) {
     throw new Error("Job not found");
@@ -302,10 +306,11 @@ export async function runPersistentJobStep(
     );
   }
 
-  const job = await getPersistentJob(
-    env.DB,
-    id
-  );
+  const job =
+    await getPersistentJob(
+      env.DB,
+      id
+    );
 
   if (!job) {
     throw new Error("Job not found");
@@ -322,9 +327,12 @@ export async function runPersistentJobStep(
     return job;
   }
 
-  if (job.attempts >= job.max_attempts) {
+  if (
+    job.attempts >= job.max_attempts
+  ) {
     job.status = "paused";
-    job.error = "Max attempts reached.";
+    job.error =
+      "Max attempts reached.";
     job.next_run_at =
       Date.now() + 10 * 60_000;
 
@@ -333,7 +341,10 @@ export async function runPersistentJobStep(
       "Paused: max attempts reached."
     );
 
-    await savePersistentJob(env.DB, job);
+    await savePersistentJob(
+      env.DB,
+      job
+    );
 
     return job;
   }
@@ -354,14 +365,15 @@ export async function runPersistentJobStep(
     const scoreBefore =
       scoreProject(files);
 
-    const roles = selectAgentRoles({
-      target: job.target,
-      build: buildBefore,
-      score: scoreBefore,
-      phase: job.phase,
-      strategy:
-        job.strategy || "normal",
-    });
+    const roles =
+      selectAgentRoles({
+        target: job.target,
+        build: buildBefore,
+        score: scoreBefore,
+        phase: job.phase,
+        strategy:
+          job.strategy || "normal",
+      });
 
     const phasePrompt =
       buildPhasePrompt({
@@ -386,7 +398,8 @@ export async function runPersistentJobStep(
         phase: job.phase,
       });
 
-    let nextFiles = pipeline.files;
+    let nextFiles =
+      pipeline.files;
 
     if (
       job.phase ===
@@ -401,7 +414,9 @@ export async function runPersistentJobStep(
     }
 
     if (
-      job.target.includes("android")
+      job.target.includes(
+        "android"
+      )
     ) {
       nextFiles = mergeFiles(
         nextFiles,
@@ -414,8 +429,9 @@ export async function runPersistentJobStep(
     nextFiles =
       applyDependencyResolution(
         nextFiles,
-        resolveDependencies(nextFiles)
-          .packageJson
+        resolveDependencies(
+          nextFiles
+        ).packageJson
       );
 
     let build =
@@ -439,7 +455,9 @@ export async function runPersistentJobStep(
       );
 
       build =
-        virtualBuildCheck(nextFiles);
+        virtualBuildCheck(
+          nextFiles
+        );
 
       score =
         scoreProject(nextFiles);
@@ -454,12 +472,14 @@ export async function runPersistentJobStep(
     const improvement =
       score.total - previousScore;
 
-    job.last_score = previousScore;
+    job.last_score =
+      previousScore;
 
     job.stagnant_steps =
       improvement <= 1
         ? Number(
-            job.stagnant_steps || 0
+            job.stagnant_steps ||
+              0
           ) + 1
         : 0;
 
@@ -508,6 +528,54 @@ export async function runPersistentJobStep(
       } · next ${job.phase}`
     );
 
+    if (
+      job.status === "done" &&
+      env.GITHUB_TOKEN
+    ) {
+      const repo =
+        getRepoFromPrompt(
+          job.prompt
+        );
+
+      if (repo) {
+        try {
+          const exportResult =
+            await exportFilesToGitHub(
+              {
+                token:
+                  env.GITHUB_TOKEN,
+                repo,
+                branch:
+                  getBranchFromPrompt(
+                    job.prompt
+                  ) || "main",
+                commitMessage:
+                  "AutoApp autonomous final export",
+                files: nextFiles,
+              }
+            );
+
+          appendJobLog(
+            job,
+            `GitHub export complete: ${exportResult.commitUrl}`
+          );
+        } catch (error: any) {
+          appendJobLog(
+            job,
+            `GitHub export failed: ${
+              error?.message ||
+              "unknown error"
+            }`
+          );
+        }
+      } else {
+        appendJobLog(
+          job,
+          "GitHub export skipped: no repo found in prompt."
+        );
+      }
+    }
+
     await savePersistentJob(
       env.DB,
       job
@@ -518,7 +586,8 @@ export async function runPersistentJobStep(
     job.status = "running";
 
     job.error =
-      error?.message || "Step failed";
+      error?.message ||
+      "Step failed";
 
     job.next_run_at =
       Date.now() + 10 * 60_000;
@@ -542,14 +611,19 @@ export function hydratePersistentJob(
 ): PersistentJob {
   return {
     id: String(row.id),
-    prompt: String(row.prompt || ""),
+    prompt: String(
+      row.prompt || ""
+    ),
     status:
       row.status || "running",
     phase:
-      row.phase || "product_spec",
+      row.phase ||
+      "product_spec",
     target:
       row.target || "web-app",
-    score: Number(row.score || 0),
+    score: Number(
+      row.score || 0
+    ),
     attempts: Number(
       row.attempts || 0
     ),
@@ -597,8 +671,10 @@ export function publicJob(
     max_attempts:
       job.max_attempts,
     error: job.error || "",
-    created_at: job.created_at,
-    updated_at: job.updated_at,
+    created_at:
+      job.created_at,
+    updated_at:
+      job.updated_at,
     next_run_at:
       job.next_run_at,
     last_score:
@@ -622,9 +698,10 @@ export function appendJobLog(
     `${new Date().toISOString()} · ${message}`
   );
 
-  job.logs_json = JSON.stringify(
-    logs.slice(0, 250)
-  );
+  job.logs_json =
+    JSON.stringify(
+      logs.slice(0, 250)
+    );
 }
 
 export function chooseNextStrategy({
@@ -645,10 +722,13 @@ export function chooseNextStrategy({
   }
 
   if (
-    Number(job.stagnant_steps || 0) >=
-    3
+    Number(
+      job.stagnant_steps || 0
+    ) >= 3
   ) {
-    if (score.productDepth < 80) {
+    if (
+      score.productDepth < 80
+    ) {
       return "force_product_depth";
     }
 
@@ -660,7 +740,9 @@ export function chooseNextStrategy({
       return "force_mobile";
     }
 
-    if (score.reliability < 85) {
+    if (
+      score.reliability < 85
+    ) {
       return "force_reliability";
     }
 
@@ -672,7 +754,8 @@ export function chooseNextStrategy({
   }
 
   if (
-    phase === "sprites_and_assets"
+    phase ===
+    "sprites_and_assets"
   ) {
     return "force_assets";
   }
@@ -685,7 +768,8 @@ export function chooseNextStrategy({
   }
 
   if (
-    phase === "final_packaging"
+    phase ===
+    "final_packaging"
   ) {
     return "finalize";
   }
@@ -727,12 +811,15 @@ export function getNextPhaseWithStrategy({
     return "core_features";
   }
 
-  if (strategy === "force_ui") {
+  if (
+    strategy === "force_ui"
+  ) {
     return "ui_system";
   }
 
   if (
-    strategy === "force_mobile"
+    strategy ===
+    "force_mobile"
   ) {
     return "ui_system";
   }
@@ -745,23 +832,28 @@ export function getNextPhaseWithStrategy({
   }
 
   if (
-    strategy === "force_assets"
+    strategy ===
+    "force_assets"
   ) {
     return "sprites_and_assets";
   }
 
   if (
-    strategy === "force_feedback"
+    strategy ===
+    "force_feedback"
   ) {
     return "animations_and_feedback";
   }
 
-  if (strategy === "repair") {
+  if (
+    strategy === "repair"
+  ) {
     return "repair";
   }
 
   if (
-    strategy === "finalize" &&
+    strategy ===
+      "finalize" &&
     score.total >= 82
   ) {
     return "final_packaging";
@@ -769,7 +861,7 @@ export function getNextPhaseWithStrategy({
 
   const index =
     AUTONOMOUS_PHASES.indexOf(
-      phase
+      phase as any
     );
 
   if (index < 0) {
@@ -779,7 +871,32 @@ export function getNextPhaseWithStrategy({
   return AUTONOMOUS_PHASES[
     Math.min(
       index + 1,
-      AUTONOMOUS_PHASES.length - 1
+      AUTONOMOUS_PHASES.length -
+        1
     )
   ];
-    }
+}
+
+function getRepoFromPrompt(
+  prompt: string
+) {
+  const match = String(
+    prompt
+  ).match(
+    /github\s*repo\s*:\s*([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/i
+  );
+
+  return match?.[1] || "";
+}
+
+function getBranchFromPrompt(
+  prompt: string
+) {
+  const match = String(
+    prompt
+  ).match(
+    /github\s*branch\s*:\s*([a-zA-Z0-9_.\/-]+)/i
+  );
+
+  return match?.[1] || "main";
+      }
