@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { VirtualFile } from "../types";
+import { exportFilesAsZip } from "../lib/exportZip";
 
 import {
   applyTemplate,
@@ -187,6 +188,23 @@ export function useAutoApp() {
     );
   }
 
+  async function handleExportZip() {
+    if (!files.length) {
+      setStatus("No files to export.");
+      return;
+    }
+
+    await runAction("Exporting ZIP...", async () => {
+      await exportFilesAsZip(files, "autoapp-project");
+
+      return {
+        ok: true,
+        exported: files.length,
+        format: "zip",
+      };
+    });
+  }
+
   async function handleGitHubAccessTest() {
     if (!githubRepo.trim()) {
       setStatus("Missing GitHub repo.");
@@ -368,6 +386,7 @@ export function useAutoApp() {
     handleResumeJob,
 
     handleExportGitHub,
+    handleExportZip,
     handleGitHubAccessTest,
     handleGitHubWriteTest,
     handleLatestCommit,
