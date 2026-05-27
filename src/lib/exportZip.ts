@@ -3,7 +3,10 @@ import { saveAs } from "file-saver";
 
 import type { VirtualFile } from "../types";
 
-export async function exportFilesAsZip(files: VirtualFile[], name = "autoapp-export") {
+export async function exportFilesAsZip(
+  files: VirtualFile[],
+  name = "autoapp-export"
+) {
   const zip = new JSZip();
 
   for (const file of files) {
