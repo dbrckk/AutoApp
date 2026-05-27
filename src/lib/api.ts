@@ -30,6 +30,15 @@ export type AutonomousJob = {
   strategy?: string;
 };
 
+export type GitHubExportResponse = {
+  ok: boolean;
+  repo?: string;
+  branch?: string;
+  commitSha?: string;
+  commitUrl?: string;
+  error?: string;
+};
+
 function buildApiUrl(path: string) {
   if (path.startsWith("http")) return path;
 
@@ -70,11 +79,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       );
     }
 
-    if (
-      String(error?.message || "")
-        .toLowerCase()
-        .includes("failed to fetch")
-    ) {
+    if (String(error?.message || "").toLowerCase().includes("failed to fetch")) {
       throw new Error(
         "Cannot reach AutoApp API. Check that the Cloudflare Worker is deployed and CORS is enabled."
       );
@@ -305,15 +310,34 @@ export async function getProjectMemory(projectId: string) {
   return data.memory;
 }
 
+export async function addProjectMemory(params: {
+  projectId: string;
+  type?: string;
+  content: unknown;
+}) {
+  const data = await request<{ ok: boolean; row: any }>(
+    `/api/memory/${params.projectId}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        type: params.type || "general",
+        content: params.content,
+      }),
+    }
+  );
+
+  return data.row;
+}
+
 export async function resetProjectMemory(projectId: string) {
-  const data = await request<{ ok: boolean; memory: any }>(
+  const data = await request<{ ok: boolean; projectId?: string; memory?: any }>(
     `/api/memory/${projectId}`,
     {
       method: "DELETE",
     }
   );
 
-  return data.memory;
+  return data;
 }
 
 export async function createAutonomousJob(params: {
@@ -333,6 +357,24 @@ export async function createAutonomousJob(params: {
   });
 
   return data;
+}
+
+export async function startRealAutonomousJob(params: {
+  prompt: string;
+  target?: string;
+}) {
+  return request<{
+    ok: boolean;
+    jobId: string;
+    job: AutonomousJob;
+    error?: string;
+  }>("/api/jobs/autonomous", {
+    method: "POST",
+    body: JSON.stringify({
+      prompt: params.prompt,
+      target: params.target,
+    }),
+  });
 }
 
 export async function listAutonomousJobs() {
@@ -403,4 +445,103 @@ export async function getAutonomousJobReport(jobId: string) {
   }>(`/api/jobs/${jobId}/report`);
 
   return data.report;
+}
+
+export async function getDiagnostics() {
+  return request<any>("/api/diagnostics");
+}
+
+export async function getLiveDiagnostics() {
+  return request<any>("/api/diagnostics/live");
+}
+
+export async function testGitHubAccess(params: {
+  repo: string;
+  branch?: string;
+}) {
+  const search = new URLSearchParams({
+    repo: params.repo,
+    branch: params.branch || "main",
+  });
+
+  return request<any>(`/api/diagnostics/github?${search.toString()}`);
+}
+
+export async function exportToGitHub(params: {
+  repo: string;
+  branch?: string;
+  commitMessage?: string;
+  files: VirtualFile[];
+}) {
+  return request<GitHubExportResponse>("/api/github/export", {
+    method: "POST",
+    body: JSON.stringify({
+      repo: params.repo,
+      branch: params.branch || "main",
+      commitMessage: params.commitMessage || "AutoApp autonomous export",
+      files: params.files,
+    }),
+  });
+}
+
+export async function testGitHubExport(params: {
+  repo: string;
+  branch?: string;
+}) {
+  return request<{
+    ok: boolean;
+    test: string;
+    result: GitHubExportResponse;
+    error?: string;
+  }>("/api/github/test-export", {
+    method: "POST",
+    body: JSON.stringify({
+      repo: params.repo,
+      branch: params.branch || "main",
+    }),
+  });
+}
+
+export async function getLatestGitHubCommit(params: {
+  repo: string;
+  branch?: string;
+}) {
+  const search = new URLSearchParams({
+    repo: params.repo,
+    branch: params.branch || "main",
+  });
+
+  return request<{
+    ok: boolean;
+    repo: string;
+    branch: string;
+    sha: string;
+    commitUrl: string;
+    error?: string;
+  }>(`/api/github/latest?${search.toString()}`);
+}
+
+export async function getGitHubFileStatus(params: {
+  repo: string;
+  branch?: string;
+  path: string;
+}) {
+  const search = new URLSearchParams({
+    repo: params.repo,
+    branch: params.branch || "main",
+    path: params.path,
+  });
+
+  return request<{
+    ok: boolean;
+    repo: string;
+    branch: string;
+    path: string;
+    sha: string;
+    size: number;
+    htmlUrl: string;
+    downloadUrl: string;
+    type: string;
+    error?: string;
+  }>(`/api/github/file?${search.toString()}`);
   }
