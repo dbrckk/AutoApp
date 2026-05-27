@@ -30,6 +30,10 @@ export function FileActionModal({
           autoFocus
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onConfirm();
+            if (event.key === "Escape") onCancel();
+          }}
           className="mt-4 w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
           placeholder="/src/new-file.ts"
         />
@@ -52,4 +56,4 @@ export function FileActionModal({
       </section>
     </div>
   );
-      }
+}
