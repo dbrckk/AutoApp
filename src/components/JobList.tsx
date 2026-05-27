@@ -4,6 +4,25 @@ import { Panel } from "./Panel";
 export function JobList({ app }: { app: AutoAppState }) {
   return (
     <Panel title="Autonomous Jobs">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <label className="flex items-center gap-2 text-xs text-zinc-400">
+          <input
+            type="checkbox"
+            checked={app.autoRefreshJobs}
+            onChange={(event) => app.setAutoRefreshJobs(event.target.checked)}
+          />
+          Auto-refresh
+        </label>
+
+        <button
+          onClick={() => app.refreshJobs()}
+          disabled={app.busy}
+          className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+        >
+          Refresh
+        </button>
+      </div>
+
       <div className="grid gap-3">
         {app.jobs.length ? (
           app.jobs.map((job) => (
@@ -20,7 +39,10 @@ export function JobList({ app }: { app: AutoAppState }) {
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-black text-white">{job.target}</span>
+                <span className="text-sm font-black text-white">
+                  {job.target}
+                </span>
+
                 <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-zinc-300">
                   {job.status}
                 </span>
@@ -42,4 +64,4 @@ export function JobList({ app }: { app: AutoAppState }) {
       </div>
     </Panel>
   );
-            }
+          }
