@@ -72,6 +72,31 @@ export function FileExplorer({ app }: { app: AutoAppState }) {
         </button>
       </div>
 
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <button
+          onClick={app.handleCreateFile}
+          className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm font-bold text-white hover:bg-white/10"
+        >
+          New file
+        </button>
+
+        <button
+          onClick={app.handleRenameSelectedFile}
+          disabled={!app.selectedFile}
+          className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm font-bold text-white hover:bg-white/10 disabled:opacity-50"
+        >
+          Rename
+        </button>
+
+        <button
+          onClick={app.handleDeleteSelectedFile}
+          disabled={!app.selectedFile}
+          className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+        >
+          Delete
+        </button>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
         <div className="max-h-[620px] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-2">
           {filteredFiles.length ? (
