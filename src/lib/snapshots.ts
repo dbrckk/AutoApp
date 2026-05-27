@@ -13,6 +13,7 @@ export function listSnapshots(): ProjectSnapshot[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw || "[]");
+
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -40,9 +41,10 @@ export function saveSnapshot(name: string, files: VirtualFile[]) {
 export function deleteSnapshot(id: string) {
   const snapshots = listSnapshots().filter((item) => item.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshots));
+
   return snapshots;
 }
 
 export function clearSnapshots() {
   localStorage.removeItem(STORAGE_KEY);
-}
+                             }
