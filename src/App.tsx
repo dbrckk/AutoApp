@@ -1,12 +1,15 @@
 import { useAutoApp } from "./hooks/useAutoApp";
+
 import { PromptPanel } from "./components/PromptPanel";
 import { GitHubPanel } from "./components/GitHubPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { ProjectToolsPanel } from "./components/ProjectToolsPanel";
+import { SnapshotsPanel } from "./components/SnapshotsPanel";
 import { JobList } from "./components/JobList";
 import { FileExplorer } from "./components/FileExplorer";
 import { ResultPanel } from "./components/ResultPanel";
 import { Panel } from "./components/Panel";
+import { FileActionModal } from "./components/FileActionModal";
 
 export default function App() {
   const app = useAutoApp();
@@ -19,6 +22,7 @@ export default function App() {
           <GitHubPanel app={app} />
           <DiagnosticsPanel app={app} />
           <ProjectToolsPanel app={app} />
+          <SnapshotsPanel app={app} />
         </aside>
 
         <section className="space-y-5">
@@ -41,6 +45,14 @@ export default function App() {
           <ResultPanel result={app.result || app.diagnostics} />
         </section>
       </section>
+
+      <FileActionModal
+        mode={app.fileActionMode}
+        value={app.fileActionValue}
+        onChange={app.setFileActionValue}
+        onCancel={app.handleCancelFileAction}
+        onConfirm={app.handleConfirmFileAction}
+      />
     </main>
   );
 }
