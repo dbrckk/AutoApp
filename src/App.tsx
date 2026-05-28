@@ -16,7 +16,29 @@ export default function App() {
   const app = useAutoApp();
 
   return (
-    <main className="min-h-screen bg-[#050505] px-4 py-6 text-white md:px-8">
+    <main className="min-h-screen bg-[#050505] px-4 pb-6 pt-24 text-white md:px-8">
+      <div className="fixed left-0 right-0 top-0 z-40 border-b border-white/10 bg-black/90 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-black text-white">
+              {app.busy ? "Working..." : "AutoApp"}
+            </p>
+
+            <p className="line-clamp-1 text-xs text-zinc-400">
+              {app.status}
+            </p>
+          </div>
+
+          <button
+            onClick={() => app.handleDiagnostics()}
+            disabled={app.busy}
+            className="rounded-xl border border-white/10 bg-white px-3 py-2 text-xs font-black text-black disabled:opacity-50"
+          >
+            Test API
+          </button>
+        </div>
+      </div>
+
       <section className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[430px_1fr]">
         <aside className="space-y-5">
           <PromptPanel app={app} />
@@ -73,4 +95,4 @@ export default function App() {
       />
     </main>
   );
-      }
+}
