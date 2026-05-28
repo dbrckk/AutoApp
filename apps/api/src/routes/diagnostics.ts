@@ -100,6 +100,17 @@ diagnosticsRoutes.get("/live", async (c) => {
     service: "AutoApp API",
     runtime: "cloudflare-workers",
     timestamp: Date.now(),
+    realCapabilities: {
+      aiGeneration: aiLive.ok ? "real" : "not_configured_or_error",
+      d1Jobs: d1.status === "connected" ? "real" : d1.status,
+      d1Memory: d1.status === "connected" ? "real" : d1.status,
+      githubExport: github.configured ? "real" : "not_configured",
+      staticBuildCheck: "static_only",
+      dependencyResolution: "static_only",
+      preview: "not_configured",
+      realNpmBuild: "not_configured",
+      apkBuild: "not_supported_on_cloudflare_worker",
+    },
     live: {
       d1,
       github,
@@ -117,7 +128,8 @@ diagnosticsRoutes.get("/github", async (c) => {
     return c.json(
       {
         ok: false,
-        error: "Missing repo query. Example: /api/diagnostics/github?repo=owner/repo",
+        error:
+          "Missing repo query. Example: /api/diagnostics/github?repo=owner/repo",
       },
       400
     );
@@ -184,7 +196,7 @@ function checkGitHub(env: Env) {
 }
 
 function checkAi(env: Env) {
-  const provider = env.DEFAULT_AI_PROVIDER || "groq";
+  const provider = env.DEFAULT_AI_PROVIDER || "gemini";
 
   const providers = {
     groq: {
@@ -202,7 +214,7 @@ function checkAi(env: Env) {
   };
 
   const selected =
-    providers[provider as keyof typeof providers] || providers.groq;
+    providers[provider as keyof typeof providers] || providers.gemini;
 
   return {
     provider,
