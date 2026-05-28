@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { VirtualFile } from "../types";
+
 import { exportFilesAsZip } from "../lib/exportZip";
+
+import {
+  deleteSnapshot,
+  listSnapshots,
+  saveSnapshot,
+  type ProjectSnapshot,
+} from "../lib/snapshots";
 
 import {
   applyTemplate,
@@ -44,6 +52,16 @@ export function useAutoApp() {
   const [githubBranch, setGithubBranch] = useState("main");
 
   const [autoRefreshJobs, setAutoRefreshJobs] = useState(true);
+
+  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>(() =>
+    listSnapshots()
+  );
+
+  const [fileActionMode, setFileActionMode] = useState<
+    "create" | "rename" | null
+  >(null);
+
+  const [fileActionValue, setFileActionValue] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Ready.");
@@ -104,6 +122,55 @@ export function useAutoApp() {
     setSelectedPath(nextFiles[0]?.path || "");
 
     return data;
+  }
+
+  function refreshSnapshots() {
+    setSnapshots(listSnapshots());
+  }
+
+  function handleSaveSnapshot() {
+    if (!files.length) {
+      setStatus("No files to snapshot.");
+      return;
+    }
+
+    const snapshot = saveSnapshot(
+      `Snapshot ${new Date().toLocaleString()}`,
+      files
+    );
+
+    refreshSnapshots();
+
+    setResult({
+      ok: true,
+      snapshot,
+    });
+
+    setStatus("Snapshot saved.");
+  }
+
+  function handleRestoreSnapshot(id: string) {
+    const snapshot = snapshots.find((item) => item.id === id);
+
+    if (!snapshot) {
+      setStatus("Snapshot not found.");
+      return;
+    }
+
+    setFiles(snapshot.files);
+    setSelectedPath(snapshot.files[0]?.path || "");
+
+    setResult({
+      ok: true,
+      restored: snapshot,
+    });
+
+    setStatus(`Snapshot restored: ${snapshot.name}`);
+  }
+
+  function handleDeleteSnapshot(id: string) {
+    setSnapshots(deleteSnapshot(id));
+    setStatus("Snapshot deleted.");
   }
 
   async function handleGenerate() {
@@ -331,6 +398,110 @@ export function useAutoApp() {
     });
   }
 
+  function handleCreateFile() {
+    setFileActionValue("/src/new-file.ts");
+    setFileActionMode("create");
+  }
+
+  function handleRenameSelectedFile() {
+    if (!selectedFile) {
+      setStatus("No file selected.");
+      return;
+    }
+
+    setFileActionValue(selectedFile.path);
+    setFileActionMode("rename");
+  }
+
+  function handleDeleteSelectedFile() {
+    if (!selectedFile) {
+      setStatus("No file selected.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedFile.path}?`);
+
+    if (!confirmed) return;
+
+    handleSaveSnapshot();
+
+    const nextFiles = files.filter((file) => file.path !== selectedFile.path);
+
+    setFiles(nextFiles);
+    setSelectedPath(nextFiles[0]?.path || "");
+    setStatus(`File deleted: ${selectedFile.path}`);
+  }
+
+  function handleCancelFileAction() {
+    setFileActionMode(null);
+    setFileActionValue("");
+  }
+
+  function handleConfirmFileAction() {
+    const normalized = normalizePath(fileActionValue);
+
+    if (!fileActionMode || !normalized.trim()) {
+      handleCancelFileAction();
+      return;
+    }
+
+    if (fileActionMode === "create") {
+      if (files.some((file) => normalizePath(file.path) === normalized)) {
+        setStatus("File already exists.");
+        return;
+      }
+
+      const nextFiles = [
+        ...files,
+        {
+          path: normalized,
+          content: "",
+        },
+      ].sort((a, b) => a.path.localeCompare(b.path));
+
+      setFiles(nextFiles);
+      setSelectedPath(normalized);
+      setStatus(`File created: ${normalized}`);
+      handleCancelFileAction();
+      return;
+    }
+
+    if (fileActionMode === "rename") {
+      if (!selectedFile) {
+        setStatus("No file selected.");
+        handleCancelFileAction();
+        return;
+      }
+
+      if (
+        files.some(
+          (file) =>
+            file.path !== selectedFile.path &&
+            normalizePath(file.path) === normalized
+        )
+      ) {
+        setStatus("A file already exists with this path.");
+        return;
+      }
+
+      const nextFiles = files
+        .map((file) =>
+          file.path === selectedFile.path
+            ? {
+                ...file,
+                path: normalized,
+              }
+            : file
+        )
+        .sort((a, b) => a.path.localeCompare(b.path));
+
+      setFiles(nextFiles);
+      setSelectedPath(normalized);
+      setStatus(`File renamed: ${normalized}`);
+      handleCancelFileAction();
+    }
+  }
+
   useEffect(() => {
     refreshJobs().catch(() => undefined);
   }, []);
@@ -375,6 +546,17 @@ export function useAutoApp() {
     autoRefreshJobs,
     setAutoRefreshJobs,
 
+    snapshots,
+    handleSaveSnapshot,
+    handleRestoreSnapshot,
+    handleDeleteSnapshot,
+
+    fileActionMode,
+    fileActionValue,
+    setFileActionValue,
+    handleCancelFileAction,
+    handleConfirmFileAction,
+
     busy,
     status,
     result,
@@ -397,6 +579,10 @@ export function useAutoApp() {
     handleUtility,
     handleLoadTemplates,
     handleApplyTemplate,
+
+    handleCreateFile,
+    handleDeleteSelectedFile,
+    handleRenameSelectedFile,
   };
 }
 
