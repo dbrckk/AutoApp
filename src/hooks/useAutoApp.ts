@@ -62,6 +62,7 @@ export function useAutoApp() {
   >(null);
 
   const [fileActionValue, setFileActionValue] = useState("");
+  const [confirmDeleteFilePath, setConfirmDeleteFilePath] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Ready.");
@@ -419,17 +420,32 @@ export function useAutoApp() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${selectedFile.path}?`);
+    setConfirmDeleteFilePath(selectedFile.path);
+  }
 
-    if (!confirmed) return;
+  function handleCancelDeleteFile() {
+    setConfirmDeleteFilePath("");
+  }
+
+  function handleConfirmDeleteSelectedFile() {
+    if (!confirmDeleteFilePath) return;
+
+    const fileToDelete = files.find((file) => file.path === confirmDeleteFilePath);
+
+    if (!fileToDelete) {
+      setStatus("File not found.");
+      setConfirmDeleteFilePath("");
+      return;
+    }
 
     handleSaveSnapshot();
 
-    const nextFiles = files.filter((file) => file.path !== selectedFile.path);
+    const nextFiles = files.filter((file) => file.path !== fileToDelete.path);
 
     setFiles(nextFiles);
     setSelectedPath(nextFiles[0]?.path || "");
-    setStatus(`File deleted: ${selectedFile.path}`);
+    setStatus(`File deleted: ${fileToDelete.path}`);
+    setConfirmDeleteFilePath("");
   }
 
   function handleCancelFileAction() {
@@ -556,6 +572,10 @@ export function useAutoApp() {
     setFileActionValue,
     handleCancelFileAction,
     handleConfirmFileAction,
+
+    confirmDeleteFilePath,
+    handleCancelDeleteFile,
+    handleConfirmDeleteSelectedFile,
 
     busy,
     status,
