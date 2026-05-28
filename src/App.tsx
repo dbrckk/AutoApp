@@ -10,6 +10,7 @@ import { FileExplorer } from "./components/FileExplorer";
 import { ResultPanel } from "./components/ResultPanel";
 import { Panel } from "./components/Panel";
 import { FileActionModal } from "./components/FileActionModal";
+import { ConfirmModal } from "./components/ConfirmModal";
 
 export default function App() {
   const app = useAutoApp();
@@ -37,6 +38,13 @@ export default function App() {
                   Active job: {app.activeJobId}
                 </p>
               ) : null}
+
+              {app.githubRepo ? (
+                <p className="mt-2 break-all text-xs text-zinc-500">
+                  GitHub target: {app.githubRepo} · branch{" "}
+                  {app.githubBranch || "main"}
+                </p>
+              ) : null}
             </div>
           </Panel>
 
@@ -53,6 +61,16 @@ export default function App() {
         onCancel={app.handleCancelFileAction}
         onConfirm={app.handleConfirmFileAction}
       />
+
+      <ConfirmModal
+        open={Boolean(app.confirmDeleteFilePath)}
+        title="Delete file"
+        message={`Delete ${app.confirmDeleteFilePath}? A local snapshot will be saved before deletion.`}
+        confirmLabel="Delete"
+        danger
+        onCancel={app.handleCancelDeleteFile}
+        onConfirm={app.handleConfirmDeleteSelectedFile}
+      />
     </main>
   );
-}
+      }
