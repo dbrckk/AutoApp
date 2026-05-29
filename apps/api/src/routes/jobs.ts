@@ -1,189 +1,387 @@
-export type JobStatus = "running" | "paused" | "done" | "error";
+import { Hono } from "hono";
 
-export type JobPhase =
+import type { Env } from "../core/types";
 
-| "product_spec"
+import {
 
-| "architecture"
+appendJobLog,
 
-| "core_features"
+createPersistentJob,
 
-| "ui_system"
+getPersistentJob,
 
-| "gameplay_or_business_logic"
+listPersistentJobs,
 
-| "sprites_and_assets"
+publicJob,
 
-| "animations_and_feedback"
+resumePersistentJob,
 
-| "repair"
+runPersistentJobStep,
 
-| "launch_pack"
+savePersistentJob,
 
-| "final_packaging"
+} from "../core/jobs";
 
-| "final_audit"
+import { safeJsonArray } from "../core/files";
 
-| "done";
+import { virtualBuildCheck } from "../core/build";
 
-export type JobStrategy =
+import { scoreProject } from "../core/scoring";
 
-| "normal"
+import { getTargetProfile } from "../core/targets";
 
-| "repair"
+import { createAutonomousReport } from "../core/reports";
 
-| "force_product_depth"
+export const jobsRoutes = new Hono<{
 
-| "force_ui"
+Bindings: Env;
 
-| "force_mobile"
+}>();
 
-| "force_reliability"
+jobsRoutes.get("/", async (c) => {
 
-| "force_assets"
+if (!c.env.DB) {
 
-| "force_feedback"
-
-| "force_seo"
-
-| "finalize";
-
-export type Job = {
-
-id: string;
-
-prompt: string;
-
-status: JobStatus;
-
-phase: JobPhase | string;
-
-target: string;
-
-score: number;
-
-attempts: number;
-
-max_attempts: number;
-
-error?: string;
-
-created_at: number;
-
-updated_at: number;
-
-next_run_at: number;
-
-last_score?: number;
-
-stagnant_steps?: number;
-
-strategy?: JobStrategy | string;
-
-infinite?: boolean;
-
-};
-
-export type JobFilesResponse = {
-
-ok: boolean;
-
-jobId: string;
-
-files: Array<{
-
-path: string;
-
-content: string;
-
-}>;
-
-phase: string;
-
-score: number;
-
-status: JobStatus | string;
-
-error?: string;
-
-};
-
-export type JobReportResponse = {
-
-ok: boolean;
-
-report: unknown;
-
-error?: string;
-
-};
-
-export type JobLogsResponse = {
-
-ok: boolean;
-
-jobId: string;
-
-logs: string[];
-
-error?: string;
-
-};
-
-export function isRunningJob(job: Job) {
-
-return job.status === "running";
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
 
 }
 
-export function isFinishedJob(job: Job) {
+const jobs = await listPersistentJobs(c.env.DB);
 
-return job.status === "done";
+return c.json({
 
-}
+ok: true,
 
-export function isInfiniteJob(job: Job) {
+jobs,
 
-return Boolean(job.infinite) || /auto\s*improve\s*forever\s*:\s*true/i.test(job.prompt || "");
+});
 
-}
+});
 
-export function getJobAgeLabel(job: Job) {
+jobsRoutes.post("/create", async (c) => {
 
-const updatedAt = Number(job.updated_at || job.created_at || 0);
+if (!c.env.DB) {
 
-if (!updatedAt) return "unknown";
-
-const deltaMs = Date.now() - updatedAt;
-
-const minutes = Math.max(0, Math.floor(deltaMs / 60_000));
-
-if (minutes < 1) return "just now";
-
-if (minutes < 60) return `${minutes}m ago`;
-
-const hours = Math.floor(minutes / 60);
-
-if (hours < 24) return `${hours}h ago`;
-
-const days = Math.floor(hours / 24);
-
-return `${days}d ago`;
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
 
 }
 
-export function getJobProgressPercent(job: Job) {
+const body = await c.req.json().catch(() => null);
 
-const max = Math.max(1, Number(job.max_attempts || 1));
+if (!body?.prompt || typeof body.prompt !== "string") {
 
-const attempts = Math.max(0, Number(job.attempts || 0));
-
-if (isInfiniteJob(job)) {
-
-return Math.min(100, Math.max(5, Number(job.score || 0)));
+return c.json({ ok: false, error: "Missing prompt" }, 400);
 
 }
 
-return Math.min(100, Math.round((attempts / max) * 100));
+const job = await createPersistentJob(c.env.DB, {
 
-  }
+prompt: body.prompt,
+
+target: body.target,
+
+});
+
+c.executionCtx.waitUntil(runPersistentJobStep(c.env, job.id));
+
+return c.json({
+
+ok: true,
+
+jobId: job.id,
+
+job: publicJob(job),
+
+});
+
+});
+
+jobsRoutes.post("/autonomous", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const body = await c.req.json().catch(() => null);
+
+if (!body?.prompt || typeof body.prompt !== "string") {
+
+return c.json({ ok: false, error: "Missing prompt" }, 400);
+
+}
+
+try {
+
+const job = await createPersistentJob(c.env.DB, {
+
+prompt: body.prompt,
+
+target: body.target,
+
+});
+
+const updatedJob = await runPersistentJobStep(c.env, job.id);
+
+return c.json({
+
+ok: true,
+
+jobId: updatedJob.id,
+
+job: publicJob(updatedJob),
+
+});
+
+} catch (error: any) {
+
+return c.json(
+
+{
+
+ok: false,
+
+error: error?.message || "Autonomous job failed",
+
+},
+
+500
+
+);
+
+}
+
+});
+
+jobsRoutes.get("/:id", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const job = await getPersistentJob(c.env.DB, c.req.param("id"));
+
+if (!job) {
+
+return c.json({ ok: false, error: "Job not found" }, 404);
+
+}
+
+return c.json(publicJob(job));
+
+});
+
+jobsRoutes.get("/:id/logs", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const job = await getPersistentJob(c.env.DB, c.req.param("id"));
+
+if (!job) {
+
+return c.json({ ok: false, error: "Job not found" }, 404);
+
+}
+
+const logs = safeJsonArray(job.logs_json).map(String);
+
+return c.json({
+
+ok: true,
+
+jobId: job.id,
+
+status: job.status,
+
+phase: job.phase,
+
+score: job.score,
+
+logs,
+
+});
+
+});
+
+jobsRoutes.post("/:id/step", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const job = await runPersistentJobStep(c.env, c.req.param("id"));
+
+return c.json({
+
+ok: true,
+
+job: publicJob(job),
+
+});
+
+});
+
+jobsRoutes.post("/:id/resume", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const job = await resumePersistentJob(c.env.DB, c.req.param("id"));
+
+c.executionCtx.waitUntil(runPersistentJobStep(c.env, job.id));
+
+return c.json({
+
+ok: true,
+
+job: publicJob(job),
+
+});
+
+});
+
+jobsRoutes.post("/:id/improve", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const job = await getPersistentJob(c.env.DB, c.req.param("id"));
+
+if (!job) {
+
+return c.json({ ok: false, error: "Job not found" }, 404);
+
+}
+
+job.status = "running";
+
+job.error = "";
+
+job.next_run_at = Date.now();
+
+if (job.phase === "done") {
+
+job.phase = "core_features";
+
+}
+
+if (!/auto\s*improve\s*forever\s*:\s*true/i.test(job.prompt)) {
+
+job.prompt = [job.prompt.trim(), "", "auto improve forever: true"].join("\n");
+
+}
+
+job.max_attempts = Math.max(Number(job.max_attempts || 12), 999999);
+
+job.strategy = "force_product_depth";
+
+appendJobLog(job, "Manual infinite improvement requested.");
+
+await savePersistentJob(c.env.DB, job);
+
+c.executionCtx.waitUntil(runPersistentJobStep(c.env, job.id));
+
+return c.json({
+
+ok: true,
+
+job: publicJob(job),
+
+});
+
+});
+
+jobsRoutes.get("/:id/files", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const job = await getPersistentJob(c.env.DB, c.req.param("id"));
+
+if (!job) {
+
+return c.json({ ok: false, error: "Job not found" }, 404);
+
+}
+
+return c.json({
+
+ok: true,
+
+jobId: job.id,
+
+files: safeJsonArray(job.files_json),
+
+phase: job.phase,
+
+score: job.score,
+
+status: job.status,
+
+});
+
+});
+
+jobsRoutes.get("/:id/report", async (c) => {
+
+if (!c.env.DB) {
+
+return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+
+}
+
+const job = await getPersistentJob(c.env.DB, c.req.param("id"));
+
+if (!job) {
+
+return c.json({ ok: false, error: "Job not found" }, 404);
+
+}
+
+const files = safeJsonArray(job.files_json);
+
+const build = virtualBuildCheck(files);
+
+const score = scoreProject(files);
+
+const report = createAutonomousReport({
+
+job,
+
+files,
+
+build,
+
+score,
+
+targetProfile: getTargetProfile(job.target),
+
+});
+
+return c.json({
+
+ok: true,
+
+report,
+
+});
+
+});
