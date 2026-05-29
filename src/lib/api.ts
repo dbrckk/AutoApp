@@ -1,173 +1,599 @@
-import { useAutoApp } from "./hooks/useAutoApp";
+import type { GenerationResponse, VirtualFile } from "../types";
 
-import { PromptPanel } from "./components/PromptPanel";
+const API_BASE_URL = "https://autoapp-api.dbrak7108.workers.dev";
 
-import { GitHubPanel } from "./components/GitHubPanel";
+const API_TIMEOUT_MS = 120_000;
 
-import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+export type BuildMode = "none" | "virtual" | "real";
 
-import { ProjectToolsPanel } from "./components/ProjectToolsPanel";
+export type AiConfig = {
 
-import { SnapshotsPanel } from "./components/SnapshotsPanel";
+provider?: string;
 
-import { ProjectsPanel } from "./components/ProjectsPanel";
+apiKey?: string;
 
-import { JobList } from "./components/JobList";
+baseUrl?: string;
 
-import { FileExplorer } from "./components/FileExplorer";
+model?: string;
 
-import { ResultPanel } from "./components/ResultPanel";
+};
 
-import { Panel } from "./components/Panel";
+export type AutonomousJob = {
 
-import { FileActionModal } from "./components/FileActionModal";
+id: string;
 
-import { ConfirmModal } from "./components/ConfirmModal";
+prompt: string;
 
-export default function App() {
+status: "running" | "paused" | "done" | "error";
 
-const app = useAutoApp();
+phase: string;
 
-return (
+target: string;
 
-<main className="min-h-screen bg-[#050505] px-4 pb-6 pt-24 text-white md:px-8">
+score: number;
 
-<div className="fixed left-0 right-0 top-0 z-40 border-b border-white/10 bg-black/90 px-4 py-3 backdrop-blur">
+attempts: number;
 
-<div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+max_attempts: number;
 
-<div className="min-w-0">
+error?: string;
 
-<p className="text-sm font-black text-white">
+created_at: number;
 
-{app.busy ? "Working..." : "AutoApp"}
+updated_at: number;
 
-</p>
+next_run_at: number;
 
-<p className="line-clamp-1 text-xs text-zinc-400">
+last_score?: number;
 
-{app.status}
+stagnant_steps?: number;
 
-</p>
+strategy?: string;
 
-</div>
+infinite?: boolean;
 
-<button
+};
 
-onClick={() => app.handleDiagnostics()}
+export type GitHubExportResponse = {
 
-disabled={app.busy}
+ok: boolean;
 
-className="shrink-0 rounded-xl border border-white/10 bg-white px-3 py-2 text-xs font-black text-black disabled:opacity-50"
+repo?: string;
 
->
+branch?: string;
 
-Test API
+commitSha?: string;
 
-</button>
+commitUrl?: string;
 
-</div>
+error?: string;
 
-</div>
+};
 
-<section className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[430px_1fr]">
+function buildApiUrl(path: string) {
 
-<aside className="space-y-5">
+if (path.startsWith("http")) return path;
 
-<PromptPanel app={app} />
+const base = API_BASE_URL.replace(/\/$/, "");
 
-<ProjectsPanel app={app} />
+const cleanPath = path.startsWith("/") ? path : `/${path}`;
 
-<GitHubPanel app={app} />
+return `${base}${cleanPath}`;
 
-<DiagnosticsPanel app={app} />
+}
 
-<ProjectToolsPanel app={app} />
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
-<SnapshotsPanel app={app} />
+const controller = new AbortController();
 
-</aside>
+const timeout = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-<section className="space-y-5">
+try {
 
-<Panel title="Status">
+const response = await fetch(buildApiUrl(url), {
 
-<div className="rounded-2xl border border-white/10 bg-black/40 p-4">
+...options,
 
-<p className="text-sm text-zinc-300">
+signal: controller.signal,
 
-{app.busy ? "Working..." : app.status}
+headers: {
 
-</p>
+"Content-Type": "application/json",
 
-{app.activeJobId ? (
+...(options?.headers || {}),
 
-<p className="mt-2 break-all text-xs text-zinc-500">
+},
 
-Active project: {app.activeJobId}
+});
 
-</p>
+const data = await response.json().catch(() => null);
 
-) : null}
+if (!response.ok) {
 
-{app.githubRepo ? (
+throw new Error(data?.error || `Request failed: ${response.status}`);
 
-<p className="mt-2 break-all text-xs text-zinc-500">
+}
 
-GitHub target: {app.githubRepo} · branch {app.githubBranch || "main"}
+return data as T;
 
-</p>
+} catch (error: any) {
 
-) : null}
+if (error?.name === "AbortError") {
 
-</div>
+throw new Error("Request timed out. Try a shorter prompt or use autonomous build continuation.");
 
-</Panel>
+}
 
-<JobList app={app} />
+if (String(error?.message || "").toLowerCase().includes("failed to fetch")) {
 
-<FileExplorer app={app} />
+throw new Error("Cannot reach AutoApp API. Check that the Cloudflare Worker is deployed and CORS is enabled.");
 
-<ResultPanel result={app.result || app.diagnostics} />
+}
 
-</section>
+throw error;
 
-</section>
+} finally {
 
-<FileActionModal
+window.clearTimeout(timeout);
 
-mode={app.fileActionMode}
+}
 
-value={app.fileActionValue}
+}
 
-onChange={app.setFileActionValue}
+export async function checkApiHealth() {
 
-onCancel={app.handleCancelFileAction}
+return request<{ ok: boolean; service?: string; runtime?: string; timestamp?: number }>("/api/health");
 
-onConfirm={app.handleConfirmFileAction}
+}
 
-/>
+export async function testGeminiApi() {
 
-<ConfirmModal
+return request<{ ok: boolean; provider: string; result?: any; error?: string }>("/api/ai/test");
 
-open={Boolean(app.confirmDeleteFilePath)}
+}
 
-title="Delete file"
+export async function generateProject(params: {
 
-message={`Delete ${app.confirmDeleteFilePath}? A local snapshot will be saved before deletion.`}
+projectId?: string;
 
-confirmLabel="Delete"
+prompt: string;
 
-danger
+currentFiles: VirtualFile[];
 
-onCancel={app.handleCancelDeleteFile}
+isAutoImprove?: boolean;
 
-onConfirm={app.handleConfirmDeleteSelectedFile}
+aiConfig?: AiConfig;
 
-/>
+buildMode?: BuildMode;
 
-</main>
+}): Promise<GenerationResponse> {
+
+return request<GenerationResponse>("/api/generate", {
+
+method: "POST",
+
+body: JSON.stringify({
+
+projectId: params.projectId,
+
+prompt: params.prompt,
+
+currentFiles: params.currentFiles,
+
+isAutoImprove: Boolean(params.isAutoImprove),
+
+aiConfig: params.aiConfig,
+
+buildMode: params.buildMode || "virtual",
+
+}),
+
+});
+
+}
+
+export async function startGenerationJob(params: {
+
+projectId?: string;
+
+prompt: string;
+
+currentFiles: VirtualFile[];
+
+isAutoImprove?: boolean;
+
+aiConfig?: AiConfig;
+
+buildMode?: BuildMode;
+
+}) {
+
+const data = await request<{ ok: boolean; jobId: string }>("/api/generate-job", {
+
+method: "POST",
+
+body: JSON.stringify({
+
+projectId: params.projectId,
+
+prompt: params.prompt,
+
+currentFiles: params.currentFiles,
+
+isAutoImprove: Boolean(params.isAutoImprove),
+
+aiConfig: params.aiConfig,
+
+buildMode: params.buildMode || "virtual",
+
+}),
+
+});
+
+return data.jobId;
+
+}
+
+export async function startAutopilotJob(params: {
+
+projectId?: string;
+
+prompt: string;
+
+files: VirtualFile[];
+
+aiConfig?: AiConfig;
+
+buildMode?: BuildMode;
+
+targetScore?: number;
+
+maxIterations?: number;
+
+}) {
+
+const data = await request<{ ok: boolean; jobId: string }>("/api/autopilot/run", {
+
+method: "POST",
+
+body: JSON.stringify({
+
+projectId: params.projectId,
+
+prompt: params.prompt,
+
+files: params.files,
+
+aiConfig: params.aiConfig,
+
+buildMode: params.buildMode || "virtual",
+
+targetScore: params.targetScore || 90,
+
+maxIterations: params.maxIterations || 5,
+
+}),
+
+});
+
+return data.jobId;
+
+}
+
+export async function getJob(jobId: string) {
+
+return request<any>(`/api/jobs/${jobId}`);
+
+}
+
+export async function checkBuild(params: { files: VirtualFile[]; mode?: BuildMode }) {
+
+return request<any>("/api/build/check", {
+
+method: "POST",
+
+body: JSON.stringify({ files: params.files, mode: params.mode || "virtual" }),
+
+});
+
+}
+
+export async function scoreProject(files: VirtualFile[]) {
+
+const data = await request<{ ok: boolean; score: any }>("/api/score", {
+
+method: "POST",
+
+body: JSON.stringify({ files }),
+
+});
+
+return data.score;
+
+}
+
+export async function inspectProject(files: VirtualFile[]) {
+
+const data = await request<{ ok: boolean; inspection: any }>("/api/inspect", {
+
+method: "POST",
+
+body: JSON.stringify({ files }),
+
+});
+
+return data.inspection;
+
+}
+
+export async function resolveDependencies(params: { files: VirtualFile[]; apply?: boolean }) {
+
+return request<{ ok: boolean; resolution: any; files?: VirtualFile[] }>("/api/dependencies/resolve", {
+
+method: "POST",
+
+body: JSON.stringify(params),
+
+});
+
+}
+
+export async function createDeploymentPack(files: VirtualFile[]) {
+
+const data = await request<{ ok: boolean; files: VirtualFile[]; count: number }>("/api/deployment/pack", {
+
+method: "POST",
+
+body: JSON.stringify({ files }),
+
+});
+
+return data.files;
+
+}
+
+export async function createPublishReport(files: VirtualFile[]) {
+
+const data = await request<{ ok: boolean; report: any }>("/api/publish/report", {
+
+method: "POST",
+
+body: JSON.stringify({ files }),
+
+});
+
+return data.report;
+
+}
+
+export async function listTemplates() {
+
+const data = await request<{ ok: boolean; templates: any[] }>("/api/templates");
+
+return data.templates;
+
+}
+
+export async function applyTemplate(id: string) {
+
+const data = await request<{ ok: boolean; template: any }>("/api/templates/apply", {
+
+method: "POST",
+
+body: JSON.stringify({ id }),
+
+});
+
+return data.template;
+
+}
+
+export async function getProjectMemory(projectId: string) {
+
+const data = await request<{ ok: boolean; memory: any }>(`/api/memory/${projectId}`);
+
+return data.memory;
+
+}
+
+export async function addProjectMemory(params: { projectId: string; type?: string; content: unknown }) {
+
+const data = await request<{ ok: boolean; row: any }>(`/api/memory/${params.projectId}`, {
+
+method: "POST",
+
+body: JSON.stringify({ type: params.type || "general", content: params.content }),
+
+});
+
+return data.row;
+
+}
+
+export async function resetProjectMemory(projectId: string) {
+
+return request<{ ok: boolean; projectId?: string; memory?: any }>(`/api/memory/${projectId}`, {
+
+method: "DELETE",
+
+});
+
+}
+
+export async function createAutonomousJob(params: { prompt: string; target?: string }) {
+
+return request<{ ok: boolean; jobId: string; job?: AutonomousJob }>("/api/jobs/create", {
+
+method: "POST",
+
+body: JSON.stringify({ prompt: params.prompt, target: params.target }),
+
+});
+
+}
+
+export async function startRealAutonomousJob(params: { prompt: string; target?: string }) {
+
+return request<{ ok: boolean; jobId: string; job: AutonomousJob; error?: string }>("/api/jobs/autonomous", {
+
+method: "POST",
+
+body: JSON.stringify({ prompt: params.prompt, target: params.target }),
+
+});
+
+}
+
+export async function listAutonomousJobs() {
+
+const data = await request<{ ok: boolean; jobs: AutonomousJob[] }>("/api/jobs");
+
+return data.jobs;
+
+}
+
+export async function getAutonomousJob(jobId: string) {
+
+return request<AutonomousJob>(`/api/jobs/${jobId}`);
+
+}
+
+export async function runAutonomousJobStep(jobId: string) {
+
+const data = await request<{ ok: boolean; job: AutonomousJob }>(`/api/jobs/${jobId}/step`, {
+
+method: "POST",
+
+});
+
+return data.job;
+
+}
+
+export async function resumeAutonomousJob(jobId: string) {
+
+const data = await request<{ ok: boolean; job: AutonomousJob }>(`/api/jobs/${jobId}/resume`, {
+
+method: "POST",
+
+});
+
+return data.job;
+
+}
+
+export async function improveAutonomousJob(jobId: string) {
+
+const data = await request<{ ok: boolean; job: AutonomousJob; error?: string }>(`/api/jobs/${jobId}/improve`, {
+
+method: "POST",
+
+});
+
+return data.job;
+
+}
+
+export async function getAutonomousJobFiles(jobId: string) {
+
+return request<{ ok: boolean; jobId: string; files: VirtualFile[]; phase: string; score: number; status: string }>(
+
+`/api/jobs/${jobId}/files`
 
 );
 
 }
+
+export async function getAutonomousJobZipFiles(jobId: string) {
+
+const data = await getAutonomousJobFiles(jobId);
+
+return data.files;
+
+}
+
+export async function getAutonomousJobReport(jobId: string) {
+
+const data = await request<{ ok: boolean; report: any }>(`/api/jobs/${jobId}/report`);
+
+return data.report;
+
+}
+
+export async function getDiagnostics() {
+
+return request<any>("/api/diagnostics");
+
+}
+
+export async function getLiveDiagnostics() {
+
+return request<any>("/api/diagnostics/live");
+
+}
+
+export async function testGitHubAccess(params: { repo: string; branch?: string }) {
+
+const search = new URLSearchParams({ repo: params.repo, branch: params.branch || "main" });
+
+return request<any>(`/api/diagnostics/github?${search.toString()}`);
+
+}
+
+export async function exportToGitHub(params: { repo: string; branch?: string; commitMessage?: string; files: VirtualFile[] }) {
+
+return request<GitHubExportResponse>("/api/github/export", {
+
+method: "POST",
+
+body: JSON.stringify({
+
+repo: params.repo,
+
+branch: params.branch || "main",
+
+commitMessage: params.commitMessage || "AutoApp autonomous export",
+
+files: params.files,
+
+}),
+
+});
+
+}
+
+export async function testGitHubExport(params: { repo: string; branch?: string }) {
+
+return request<{ ok: boolean; test: string; result: GitHubExportResponse; error?: string }>("/api/github/test-export", {
+
+method: "POST",
+
+body: JSON.stringify({ repo: params.repo, branch: params.branch || "main" }),
+
+});
+
+}
+
+export async function getLatestGitHubCommit(params: { repo: string; branch?: string }) {
+
+const search = new URLSearchParams({ repo: params.repo, branch: params.branch || "main" });
+
+return request<{ ok: boolean; repo: string; branch: string; sha: string; commitUrl: string; error?: string }>(
+
+`/api/github/latest?${search.toString()}`
+
+);
+
+}
+
+export async function getGitHubFileStatus(params: { repo: string; branch?: string; path: string }) {
+
+const search = new URLSearchParams({ repo: params.repo, branch: params.branch || "main", path: params.path });
+
+return request<{ ok: boolean; repo: string; branch: string; path: string; sha: string; size: number; htmlUrl: string; downloadUrl: string; type: string; error?: string }>(
+
+`/api/github/file?${search.toString()}`
+
+);
+
+  }
