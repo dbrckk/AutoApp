@@ -15,17 +15,35 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["node", "vite/client"]
+    "types": ["vite/client"]
   },
   "include": [
-    "server.ts",
     "vite.config.ts",
-    "src/**/*.ts",
-    "src/**/*.tsx"
+    "src/App.tsx",
+    "src/main.tsx",
+    "src/types.ts",
+    "src/hooks/**/*.ts",
+    "src/lib/api.ts",
+    "src/lib/exportZip.ts",
+    "src/lib/projectIO.ts",
+    "src/lib/snapshots.ts",
+    "src/lib/zip.ts",
+    "src/components/ActionButton.tsx",
+    "src/components/CodeEditor.tsx",
+    "src/components/ConfirmModal.tsx",
+    "src/components/DiagnosticsPanel.tsx",
+    "src/components/FileActionModal.tsx",
+    "src/components/FileExplorer.tsx",
+    "src/components/GitHubHistoryPanel.tsx",
+    "src/components/GitHubPanel.tsx",
+    "src/components/JobList.tsx",
+    "src/components/JobLogsPanel.tsx",
+    "src/components/Panel.tsx",
+    "src/components/ProjectToolsPanel.tsx",
+    "src/components/ProjectsPanel.tsx",
+    "src/components/PromptPanel.tsx",
+    "src/components/ResultPanel.tsx",
+    "src/components/SnapshotsPanel.tsx"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    ".git"
-  ]
+  "exclude": ["node_modules", "dist", ".git", "server.ts", "src/core/**/*"]
 }
