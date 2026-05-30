@@ -1,50 +1,68 @@
 import type { AutoAppState } from "../hooks/useAutoApp";
 
-import { ActionButton } from "./ActionButton";
+import { EmptyState } from "./EmptyState";
 
-import { Panel } from "./Panel";
+import { StatusBadge } from "./StatusBadge";
 
 export function ProjectsPanel({ app }: { app: AutoAppState }) {
 
-const sortedJobs = [...app.jobs].sort(
-
-(a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0)
-
-);
-
 return (
 
-<Panel
+<section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
 
-title="Projects"
+<div className="mb-4 flex items-start justify-between gap-3">
 
-subtitle="Persistent autonomous projects. They continue through Cloudflare cron even when this window is closed."
+<div>
 
->
+<h2 className="text-lg font-black text-white">Projects</h2>
 
-<div className="mb-4 grid gap-3">
+<p className="mt-1 text-xs text-zinc-500">
 
-<ActionButton onClick={() => app.refreshJobs()} disabled={app.busy}>
+Persistent autonomous jobs. They continue from Cloudflare cron.
 
-Refresh projects
-
-</ActionButton>
+</p>
 
 </div>
 
-<div className="grid max-h-[520px] gap-3 overflow-auto pr-1">
+<button
 
-{sortedJobs.length ? (
+onClick={() => app.refreshJobs()}
 
-sortedJobs.map((job) => {
+disabled={app.busy}
 
-const isActive = app.activeJobId === job.id;
+className="min-h-10 rounded-2xl border border-white/10 bg-black/40 px-4 text-xs font-black text-white disabled:opacity-50 active:scale-[0.98]"
 
-const updatedAt = job.updated_at
+>
 
-? new Date(job.updated_at).toLocaleString()
+Refresh
 
-: "unknown";
+</button>
+
+</div>
+
+<label className="mb-4 flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-zinc-300">
+
+<span>Auto-refresh jobs</span>
+
+<input
+
+type="checkbox"
+
+checked={app.autoRefreshJobs}
+
+onChange={(event) => app.setAutoRefreshJobs(event.target.checked)}
+
+/>
+
+</label>
+
+<div className="grid gap-3">
+
+{app.jobs.length ? (
+
+app.jobs.map((job) => {
+
+const selected = app.activeJobId === job.id;
 
 return (
 
@@ -52,9 +70,9 @@ return (
 
 key={job.id}
 
-className={`rounded-2xl border p-4 transition ${
+className={`rounded-3xl border p-4 transition ${
 
-isActive
+selected
 
 ? "border-white/30 bg-white/10"
 
@@ -64,17 +82,25 @@ isActive
 
 >
 
+<button
+
+onClick={() => app.handleOpenJob(job.id)}
+
+className="block w-full text-left"
+
+>
+
 <div className="flex items-start justify-between gap-3">
 
 <div className="min-w-0">
 
 <p className="truncate text-sm font-black text-white">
 
-{job.target || "project"}
+{job.target || "Project"}
 
 </p>
 
-<p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">
+<p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-500">
 
 {job.prompt}
 
@@ -82,35 +108,37 @@ isActive
 
 </div>
 
-<span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs text-zinc-300">
-
-{job.status}
-
-</span>
+<StatusBadge value={job.status} />
 
 </div>
 
-<div className="mt-3 grid grid-cols-2 gap-2 text-xs text-zinc-500">
+<div className="mt-3 grid grid-cols-3 gap-2 text-center">
 
-<p>Score: {job.score}/100</p>
+<Metric label="Score" value={`${job.score || 0}`} />
 
-<p>Phase: {job.phase}</p>
+<Metric label="Phase" value={job.phase || "-"} />
 
-<p>Attempts: {job.attempts}/{job.max_attempts}</p>
+<Metric
 
-<p>Updated: {updatedAt}</p>
+label="Attempts"
+
+value={`${job.attempts || 0}/${job.max_attempts || 0}`}
+
+/>
 
 </div>
 
-<div className="mt-4 grid gap-2 md:grid-cols-3">
+</button>
+
+<div className="mt-3 grid gap-2 sm:grid-cols-3">
 
 <button
 
-onClick={() => app.handleOpenProject(job.id)}
+onClick={() => app.handleOpenJob(job.id)}
 
 disabled={app.busy}
 
-className="rounded-xl bg-white px-3 py-2 text-xs font-black text-black disabled:opacity-50"
+className="min-h-11 rounded-2xl bg-white px-4 text-xs font-black text-black disabled:opacity-50 active:scale-[0.98]"
 
 >
 
@@ -124,25 +152,31 @@ onClick={() => app.handleImproveJob(job.id)}
 
 disabled={app.busy}
 
-className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+className="min-h-11 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 text-xs font-black text-emerald-200 disabled:opacity-50 active:scale-[0.98]"
 
 >
 
-Improve forever
+Improve
 
 </button>
 
 <button
 
-onClick={() => app.refreshJobFiles(job.id)}
+onClick={() => {
+
+app.setActiveJobId(job.id);
+
+app.refreshJobLogs(job.id);
+
+}}
 
 disabled={app.busy}
 
-className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+className="min-h-11 rounded-2xl border border-white/10 bg-black/40 px-4 text-xs font-black text-white disabled:opacity-50 active:scale-[0.98]"
 
 >
 
-Load files
+Logs
 
 </button>
 
@@ -156,18 +190,40 @@ Load files
 
 ) : (
 
-<p className="rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-zinc-500">
+<EmptyState
 
-No project yet. Start a real autonomous job to create one.
+title="No projects yet"
 
-</p>
+description="Start an autonomous project from the Home tab."
+
+/>
 
 )}
 
 </div>
 
-</Panel>
+</section>
 
 );
 
-  }
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+
+return (
+
+<div className="rounded-2xl border border-white/10 bg-black/30 px-2 py-3">
+
+<p className="truncate text-xs font-black text-white">{value}</p>
+
+<p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-zinc-600">
+
+{label}
+
+</p>
+
+</div>
+
+);
+
+}
