@@ -1,4 +1,14 @@
+import { Suspense, lazy, useMemo, useState } from "react";
+
 import { useAutoApp } from "./hooks/useAutoApp";
+
+import { TopStatusBar } from "./components/TopStatusBar";
+
+import { MobileTabBar, type AppTab } from "./components/MobileTabBar";
+
+import { MobileScreen } from "./components/MobileScreen";
+
+import { DashboardScreen } from "./components/DashboardScreen";
 
 import { PromptPanel } from "./components/PromptPanel";
 
@@ -8,131 +18,171 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 
 import { ProjectToolsPanel } from "./components/ProjectToolsPanel";
 
-import { SnapshotsPanel } from "./components/SnapshotsPanel";
-
 import { ProjectsPanel } from "./components/ProjectsPanel";
 
-import { JobList } from "./components/JobList";
+import { JobLogsPanel } from "./components/JobLogsPanel";
 
 import { FileExplorer } from "./components/FileExplorer";
 
 import { ResultPanel } from "./components/ResultPanel";
 
-import { Panel } from "./components/Panel";
-
 import { FileActionModal } from "./components/FileActionModal";
 
 import { ConfirmModal } from "./components/ConfirmModal";
+
+const SnapshotsPanel = lazy(() =>
+
+import("./components/SnapshotsPanel").then((mod) => ({
+
+default: mod.SnapshotsPanel,
+
+}))
+
+);
+
+const GitHubHistoryPanel = lazy(() =>
+
+import("./components/GitHubHistoryPanel").then((mod) => ({
+
+default: mod.GitHubHistoryPanel,
+
+}))
+
+);
+
+const DiagnosticsLazyPanel = lazy(() =>
+
+import("./components/DiagnosticsPanel").then((mod) => ({
+
+default: mod.DiagnosticsPanel,
+
+}))
+
+);
 
 export default function App() {
 
 const app = useAutoApp();
 
+const [activeTab, setActiveTab] = useState<AppTab>("home");
+
+const resultPayload = useMemo(
+
+() => app.result || app.diagnostics || {},
+
+[app.result, app.diagnostics]
+
+);
+
 return (
 
-<main className="min-h-screen bg-[#050505] px-4 pb-6 pt-24 text-white md:px-8">
+<main className="min-h-screen overflow-x-hidden bg-[#050505] text-white">
 
-<div className="fixed left-0 right-0 top-0 z-40 border-b border-white/10 bg-black/90 px-4 py-3 backdrop-blur">
+<TopStatusBar app={app} />
 
-<div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+<section className="mx-auto min-h-screen max-w-7xl px-3 pb-28 pt-24 md:px-6 lg:px-8">
 
-<div className="min-w-0">
-
-<p className="text-sm font-black text-white">
-
-{app.busy ? "Working..." : "AutoApp"}
-
-</p>
-
-<p className="line-clamp-1 text-xs text-zinc-400">
-
-{app.status}
-
-</p>
-
-</div>
-
-<button
-
-onClick={() => app.handleDiagnostics()}
-
-disabled={app.busy}
-
-className="shrink-0 rounded-xl border border-white/10 bg-white px-3 py-2 text-xs font-black text-black disabled:opacity-50"
-
->
-
-Test API
-
-</button>
-
-</div>
-
-</div>
-
-<section className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[430px_1fr]">
+<div className="hidden gap-5 lg:grid lg:grid-cols-[420px_1fr]">
 
 <aside className="space-y-5">
 
 <PromptPanel app={app} />
 
-<ProjectsPanel app={app} />
-
 <GitHubPanel app={app} />
-
-<DiagnosticsPanel app={app} />
 
 <ProjectToolsPanel app={app} />
 
+<Suspense fallback={<PanelFallback title="Snapshots" />}>
+
 <SnapshotsPanel app={app} />
+
+</Suspense>
 
 </aside>
 
 <section className="space-y-5">
 
-<Panel title="Status">
+<DashboardScreen app={app} />
 
-<div className="rounded-2xl border border-white/10 bg-black/40 p-4">
-
-<p className="text-sm text-zinc-300">
-
-{app.busy ? "Working..." : app.status}
-
-</p>
-
-{app.activeJobId ? (
-
-<p className="mt-2 break-all text-xs text-zinc-500">
-
-Active project: {app.activeJobId}
-
-</p>
-
-) : null}
-
-{app.githubRepo ? (
-
-<p className="mt-2 break-all text-xs text-zinc-500">
-
-GitHub target: {app.githubRepo} · branch {app.githubBranch || "main"}
-
-</p>
-
-) : null}
-
-</div>
-
-</Panel>
-
-<JobList app={app} />
+<ProjectsPanel app={app} />
 
 <FileExplorer app={app} />
 
-<ResultPanel result={app.result || app.diagnostics} />
+<JobLogsPanel app={app} />
+
+<Suspense fallback={<PanelFallback title="GitHub history" />}>
+
+<GitHubHistoryPanel app={app} />
+
+</Suspense>
+
+<ResultPanel result={resultPayload} />
 
 </section>
 
+</div>
+
+<div className="lg:hidden">
+
+<MobileScreen active={activeTab === "home"}>
+
+<DashboardScreen app={app} />
+
+<PromptPanel app={app} />
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "projects"}>
+
+<ProjectsPanel app={app} />
+
+<JobLogsPanel app={app} />
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "editor"}>
+
+<FileExplorer app={app} />
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "github"}>
+
+<GitHubPanel app={app} />
+
+<Suspense fallback={<PanelFallback title="GitHub history" />}>
+
+<GitHubHistoryPanel app={app} />
+
+</Suspense>
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "tools"}>
+
+<ProjectToolsPanel app={app} />
+
+<Suspense fallback={<PanelFallback title="Diagnostics" />}>
+
+<DiagnosticsLazyPanel app={app} />
+
+</Suspense>
+
+<Suspense fallback={<PanelFallback title="Snapshots" />}>
+
+<SnapshotsPanel app={app} />
+
+</Suspense>
+
+<ResultPanel result={resultPayload} />
+
+</MobileScreen>
+
+</div>
+
 </section>
+
+<MobileTabBar activeTab={activeTab} onChange={setActiveTab} />
 
 <FileActionModal
 
@@ -171,3 +221,19 @@ onConfirm={app.handleConfirmDeleteSelectedFile}
 );
 
 }
+
+function PanelFallback({ title }: { title: string }) {
+
+return (
+
+<section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+
+<h2 className="text-lg font-black text-white">{title}</h2>
+
+<div className="mt-4 h-20 animate-pulse rounded-2xl bg-white/5" />
+
+</section>
+
+);
+
+  }
