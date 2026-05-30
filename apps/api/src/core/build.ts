@@ -1,436 +1,587 @@
 import type { VirtualFile } from "./types";
-import {
-  normalizePackageName,
-  normalizePath,
-  readPackageJson,
-  sortObject,
-} from "./files";
 
-export function virtualBuildCheck(files: VirtualFile[]) {
-  const logs: string[] = [];
-  const paths = new Set(files.map((file) => normalizePath(file.path)));
-  const packageFile = files.find(
-    (file) => normalizePath(file.path) === "/package.json"
-  );
+import { normalizePath } from "./files";
 
-  validatePackageJson(packageFile, logs);
-  validateEntrypoints(paths, logs);
-  validateRelativeImports(files, paths, logs);
-  validatePackageImports(files, packageFile, logs);
-  validateJsonFiles(files, logs);
+export type VirtualBuildResult = {
 
-  return {
-    ok: logs.length === 0,
-    issues: logs.map((message) => ({
-      type: detectIssueType(message),
-      message,
-      raw: message,
-    })),
-    log: logs.join("\n"),
-  };
-}
+ok: boolean;
 
-function validatePackageJson(
-  packageFile: VirtualFile | undefined,
-  logs: string[]
-) {
-  if (!packageFile?.content) {
-    logs.push("Missing /package.json");
-    return;
-  }
+errors: string[];
 
-  try {
-    const pkg = JSON.parse(packageFile.content);
+warnings: string[];
 
-    if (!pkg.scripts?.build) logs.push("/package.json: missing scripts.build");
-    if (!pkg.scripts?.dev) logs.push("/package.json: missing scripts.dev");
+missingImports: string[];
 
-    if (!pkg.dependencies?.react && !pkg.devDependencies?.react) {
-      logs.push("/package.json: Cannot find module 'react'");
-    }
+missingDependencies: string[];
 
-    if (!pkg.dependencies?.["react-dom"] && !pkg.devDependencies?.["react-dom"]) {
-      logs.push("/package.json: Cannot find module 'react-dom'");
-    }
-  } catch {
-    logs.push("/package.json: invalid JSON");
-  }
-}
+invalidFiles: string[];
 
-function validateEntrypoints(paths: Set<string>, logs: string[]) {
-  if (!paths.has("/index.html")) {
-    logs.push("Missing /index.html");
-  }
+checkedAt: number;
 
-  if (!paths.has("/src/main.tsx") && !paths.has("/src/main.jsx")) {
-    logs.push("Missing /src/main.tsx");
-  }
+summary: string;
 
-  if (!paths.has("/src/App.tsx") && !paths.has("/src/App.jsx")) {
-    logs.push("Missing /src/App.tsx");
-  }
-}
+};
 
-function validateRelativeImports(
-  files: VirtualFile[],
-  paths: Set<string>,
-  logs: string[]
-) {
-  for (const file of files) {
-    if (!file.content) continue;
-    if (!isSourceFile(file.path)) continue;
+const BUILTIN_MODULES = new Set([
 
-    const imports = extractImports(file.content).filter(
-      (importPath) => importPath.startsWith(".") || importPath.startsWith("/")
-    );
+"react",
 
-    for (const importPath of imports) {
-      const resolved = resolveImport(file.path, importPath, paths);
+"react-dom",
 
-      if (!resolved) {
-        logs.push(`${file.path}: Cannot find module '${importPath}'`);
-      }
-    }
-  }
-}
+"react-dom/client",
 
-function validatePackageImports(
-  files: VirtualFile[],
-  packageFile: VirtualFile | undefined,
-  logs: string[]
-) {
-  if (!packageFile?.content) return;
+"@vitejs/plugin-react",
 
-  let pkg: any = null;
+"@tailwindcss/vite",
 
-  try {
-    pkg = JSON.parse(packageFile.content);
-  } catch {
-    return;
-  }
+"vite",
 
-  const declared = new Set([
-    ...Object.keys(pkg.dependencies || {}),
-    ...Object.keys(pkg.devDependencies || {}),
-    ...Object.keys(pkg.peerDependencies || {}),
-  ]);
+]);
 
-  for (const file of files) {
-    if (!file.content) continue;
-    if (!isSourceFile(file.path)) continue;
+export function virtualBuildCheck(files: VirtualFile[]): VirtualBuildResult {
 
-    const imports = extractImports(file.content).filter(
-      (importPath) =>
-        !importPath.startsWith(".") &&
-        !importPath.startsWith("/") &&
-        !importPath.startsWith("@/")
-    );
+const normalized = normalizeFiles(files);
 
-    for (const importPath of imports) {
-      const packageName = normalizePackageName(importPath);
+const paths = normalized.map((file) => normalizePath(file.path));
 
-      if (!packageName) continue;
-      if (isBuiltinPackage(packageName)) continue;
+const fileMap = new Map(paths.map((path, index) => [path, normalized[index]]));
 
-      if (!declared.has(packageName)) {
-        logs.push(`${file.path}: Cannot find module '${packageName}'`);
-      }
-    }
-  }
-}
+const errors: string[] = [];
 
-function validateJsonFiles(files: VirtualFile[], logs: string[]) {
-  for (const file of files) {
-    if (!file.path.endsWith(".json")) continue;
-    if (!file.content) continue;
+const warnings: string[] = [];
 
-    try {
-      JSON.parse(file.content);
-    } catch {
-      logs.push(`${file.path}: invalid JSON`);
-    }
-  }
+const missingImports: string[] = [];
+
+const missingDependencies: string[] = [];
+
+const invalidFiles: string[] = [];
+
+validateCriticalFiles({ paths, errors, warnings });
+
+validatePackageJson({ fileMap, errors, warnings, missingDependencies });
+
+validateViteProject({ fileMap, errors, warnings });
+
+validateFiles({ files: normalized, invalidFiles, errors, warnings });
+
+validateImports({ files: normalized, paths, missingImports, missingDependencies });
+
+validateReactRuntime({ files: normalized, errors, warnings });
+
+validateAndroidReadiness({ paths, fileMap, warnings });
+
+const ok =
+
+errors.length === 0 &&
+
+invalidFiles.length === 0 &&
+
+missingImports.length === 0 &&
+
+missingDependencies.length === 0;
+
+return {
+
+ok,
+
+errors,
+
+warnings,
+
+missingImports: Array.from(new Set(missingImports)),
+
+missingDependencies: Array.from(new Set(missingDependencies)),
+
+invalidFiles: Array.from(new Set(invalidFiles)),
+
+checkedAt: Date.now(),
+
+summary: ok
+
+? "Static build check passed. This is not a real npm build."
+
+: "Static build check found issues. Repair before deployment.",
+
+};
+
 }
 
 export function resolveDependencies(files: VirtualFile[]) {
-  const used = new Set<string>();
 
-  for (const file of files) {
-    if (!file.content) continue;
-    if (!isSourceFile(file.path)) continue;
+const normalized = normalizeFiles(files);
 
-    const imports = extractImports(file.content);
+const packageFile = normalized.find(
 
-    for (const importPath of imports) {
-      const packageName = normalizePackageName(importPath);
+(file) => normalizePath(file.path) === "/package.json"
 
-      if (!packageName) continue;
-      if (packageName.startsWith(".")) continue;
-      if (packageName.startsWith("/")) continue;
-      if (packageName.startsWith("@/")) continue;
-      if (isBuiltinPackage(packageName)) continue;
+);
 
-      used.add(packageName);
-    }
-  }
+const imports = collectExternalImports(normalized);
 
-  const packageJson = readPackageJson(files) || createDefaultPackageJson();
+const addedDependencies: string[] = [];
 
-  packageJson.name ||= "generated-app";
-  packageJson.private = true;
-  packageJson.version ||= "1.0.0";
-  packageJson.type ||= "module";
+const addedDevDependencies: string[] = [];
 
-  packageJson.scripts = {
-    dev: "vite",
-    build: "vite build",
-    preview: "vite preview",
-    ...(packageJson.scripts || {}),
-  };
+const warnings: string[] = [];
 
-  packageJson.dependencies ||= {};
-  packageJson.devDependencies ||= {};
+let packageJson: any = {};
 
-  ensureBaseDependencies(packageJson);
+if (packageFile?.content) {
 
-  const target = detectTargetFromFiles(files);
+try {
 
-  if (target.includes("android")) {
-    ensureAndroidDependencies(packageJson);
-  }
+packageJson = JSON.parse(packageFile.content);
 
-  const declared = new Set([
-    ...Object.keys(packageJson.dependencies || {}),
-    ...Object.keys(packageJson.devDependencies || {}),
-    ...Object.keys(packageJson.peerDependencies || {}),
-  ]);
+} catch {
 
-  const missing = Array.from(used).filter((pkg) => !declared.has(pkg));
+warnings.push("package.json is invalid JSON.");
 
-  for (const pkg of missing) {
-    if (isDevDependency(pkg)) {
-      packageJson.devDependencies[pkg] = defaultVersion(pkg);
-    } else {
-      packageJson.dependencies[pkg] = defaultVersion(pkg);
-    }
-  }
+packageJson = {};
 
-  cleanupDependencyPlacement(packageJson);
-
-  return {
-    ok: missing.length === 0,
-    packageJsonFound: true,
-    usedPackages: Array.from(used).sort(),
-    declaredDependencies: Array.from(
-      new Set([
-        ...Object.keys(packageJson.dependencies || {}),
-        ...Object.keys(packageJson.devDependencies || {}),
-      ])
-    ).sort(),
-    missingDependencies: missing.sort(),
-    packageJson: JSON.stringify(packageJson, null, 2),
-    warnings: [],
-  };
 }
 
-export function applyDependencyResolution(
-  files: VirtualFile[],
-  packageJson?: string
-): VirtualFile[] {
-  return [
-    ...files.filter((file) => normalizePath(file.path) !== "/package.json"),
-    {
-      path: "/package.json",
-      content: packageJson || resolveDependencies(files).packageJson || "",
-    },
-  ].sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function extractImports(content: string): string[] {
-  const imports = new Set<string>();
+packageJson.private ??= true;
 
-  const patterns = [
-    /import\s+[^'"]*from\s+["']([^"']+)["']/g,
-    /import\s+["']([^"']+)["']/g,
-    /import\s*\(\s*["']([^"']+)["']\s*\)/g,
-    /require\s*\(\s*["']([^"']+)["']\s*\)/g,
-    /export\s+[^'"]*from\s+["']([^"']+)["']/g,
-  ];
+packageJson.type ||= "module";
 
-  for (const regex of patterns) {
-    let match: RegExpExecArray | null;
+packageJson.scripts ||= {};
 
-    while ((match = regex.exec(content))) {
-      imports.add(match[1]);
-    }
-  }
+packageJson.dependencies ||= {};
 
-  return Array.from(imports);
+packageJson.devDependencies ||= {};
+
+if (!packageJson.scripts.build) packageJson.scripts.build = "vite build";
+
+if (!packageJson.scripts.dev) packageJson.scripts.dev = "vite --host 0.0.0.0";
+
+if (!packageJson.scripts.preview) packageJson.scripts.preview = "vite preview --host 0.0.0.0";
+
+ensureDep(packageJson.dependencies, "react", "latest", addedDependencies);
+
+ensureDep(packageJson.dependencies, "react-dom", "latest", addedDependencies);
+
+ensureDep(packageJson.devDependencies, "vite", "latest", addedDevDependencies);
+
+ensureDep(packageJson.devDependencies, "@vitejs/plugin-react", "latest", addedDevDependencies);
+
+ensureDep(packageJson.devDependencies, "typescript", "latest", addedDevDependencies);
+
+for (const dependency of imports) {
+
+if (dependency.startsWith(".") || dependency.startsWith("/")) continue;
+
+const packageName = dependency.startsWith("@")
+
+? dependency.split("/").slice(0, 2).join("/")
+
+: dependency.split("/")[0];
+
+addKnownDependency(packageJson, packageName, addedDependencies, addedDevDependencies);
+
 }
 
-function resolveImport(
-  fromPath: string,
-  imported: string,
-  paths: Set<string>
-): string | undefined {
-  if (imported.startsWith("/")) {
-    return resolveCandidates(imported, paths);
-  }
+return {
 
-  const baseParts = normalizePath(fromPath).split("/");
-  baseParts.pop();
+packageJson: {
 
-  for (const part of imported.split("/")) {
-    if (part === ".") continue;
-    if (part === "..") baseParts.pop();
-    else baseParts.push(part);
-  }
+path: "/package.json",
 
-  return resolveCandidates(baseParts.join("/"), paths);
+content: JSON.stringify(packageJson, null, 2),
+
+},
+
+addedDependencies: Array.from(new Set(addedDependencies)),
+
+addedDevDependencies: Array.from(new Set(addedDevDependencies)),
+
+warnings,
+
+};
+
 }
 
-function resolveCandidates(base: string, paths: Set<string>): string | undefined {
-  const normalized = normalizePath(base);
+export function applyDependencyResolution(files: VirtualFile[], packageJson: VirtualFile | null) {
 
-  const candidates = [
-    normalized,
-    `${normalized}.ts`,
-    `${normalized}.tsx`,
-    `${normalized}.js`,
-    `${normalized}.jsx`,
-    `${normalized}.json`,
-    `${normalized}.css`,
-    `${normalized}/index.ts`,
-    `${normalized}/index.tsx`,
-    `${normalized}/index.js`,
-    `${normalized}/index.jsx`,
-  ];
+if (!packageJson) return files;
 
-  return candidates.find((candidate) => paths.has(candidate));
+const nextFiles = [...files];
+
+const index = nextFiles.findIndex((file) => normalizePath(file.path) === "/package.json");
+
+if (index >= 0) nextFiles[index] = packageJson;
+
+else nextFiles.unshift(packageJson);
+
+return nextFiles;
+
 }
 
-function createDefaultPackageJson() {
-  return {
-    name: "generated-app",
-    private: true,
-    version: "1.0.0",
-    type: "module",
-    scripts: {
-      dev: "vite",
-      build: "vite build",
-      preview: "vite preview",
-    },
-    dependencies: {},
-    devDependencies: {},
-  };
+function validateCriticalFiles({ paths, errors, warnings }: { paths: string[]; errors: string[]; warnings: string[] }) {
+
+if (!paths.includes("/package.json")) errors.push("Missing /package.json.");
+
+if (!paths.includes("/index.html")) errors.push("Missing /index.html.");
+
+if (!paths.includes("/src/main.tsx") && !paths.includes("/src/main.jsx")) errors.push("Missing /src/main.tsx or /src/main.jsx.");
+
+if (!paths.includes("/src/App.tsx") && !paths.includes("/src/App.jsx")) warnings.push("Missing /src/App.tsx or /src/App.jsx.");
+
 }
 
-function ensureBaseDependencies(packageJson: any) {
-  packageJson.dependencies.react ||= "latest";
-  packageJson.dependencies["react-dom"] ||= "latest";
-  packageJson.dependencies["@tailwindcss/vite"] ||= "latest";
+function validatePackageJson({ fileMap, errors, warnings, missingDependencies }: { fileMap: Map<string, VirtualFile>; errors: string[]; warnings: string[]; missingDependencies: string[] }) {
 
-  packageJson.devDependencies.vite ||= "latest";
-  packageJson.devDependencies.typescript ||= "latest";
-  packageJson.devDependencies["@vitejs/plugin-react"] ||= "latest";
+const file = fileMap.get("/package.json");
+
+if (!file?.content) return;
+
+try {
+
+const parsed = JSON.parse(file.content);
+
+if (!parsed.scripts?.build) warnings.push("package.json missing scripts.build.");
+
+if (!parsed.dependencies?.react) missingDependencies.push("react");
+
+if (!parsed.dependencies?.["react-dom"]) missingDependencies.push("react-dom");
+
+if (!parsed.devDependencies?.vite && !parsed.dependencies?.vite) missingDependencies.push("vite");
+
+if (!parsed.devDependencies?.["@vitejs/plugin-react"] && !parsed.dependencies?.["@vitejs/plugin-react"]) missingDependencies.push("@vitejs/plugin-react");
+
+} catch {
+
+errors.push("package.json is invalid JSON.");
+
 }
 
-function ensureAndroidDependencies(packageJson: any) {
-  packageJson.dependencies["@capacitor/core"] ||= "latest";
-  packageJson.devDependencies["@capacitor/cli"] ||= "latest";
-  packageJson.devDependencies["@capacitor/android"] ||= "latest";
 }
 
-function cleanupDependencyPlacement(packageJson: any) {
-  for (const dep of Object.keys(packageJson.dependencies || {})) {
-    if (isDevDependency(dep)) {
-      packageJson.devDependencies[dep] =
-        packageJson.devDependencies[dep] || packageJson.dependencies[dep];
+function validateViteProject({ fileMap, errors, warnings }: { fileMap: Map<string, VirtualFile>; errors: string[]; warnings: string[] }) {
 
-      delete packageJson.dependencies[dep];
-    }
-  }
+const paths = Array.from(fileMap.keys());
 
-  packageJson.dependencies = sortObject(packageJson.dependencies || {});
-  packageJson.devDependencies = sortObject(packageJson.devDependencies || {});
-  packageJson.scripts = sortObject(packageJson.scripts || {});
+const hasViteConfig = paths.includes("/vite.config.ts") || paths.includes("/vite.config.js");
+
+if (!hasViteConfig) warnings.push("Missing vite.config.ts or vite.config.js.");
+
+const index = fileMap.get("/index.html")?.content || "";
+
+if (index && !index.includes("src/main")) errors.push("index.html does not reference /src/main.tsx or /src/main.jsx.");
+
 }
 
-function defaultVersion(pkg: string) {
-  const versions: Record<string, string> = {
-    react: "latest",
-    "react-dom": "latest",
-    vite: "latest",
-    typescript: "latest",
-    "@vitejs/plugin-react": "latest",
-    "@tailwindcss/vite": "latest",
-    tailwindcss: "latest",
-    "lucide-react": "latest",
-    "framer-motion": "latest",
-    recharts: "latest",
-    clsx: "latest",
-    "tailwind-merge": "latest",
-    "@capacitor/core": "latest",
-    "@capacitor/cli": "latest",
-    "@capacitor/android": "latest",
-  };
+function validateFiles({ files, invalidFiles, errors, warnings }: { files: VirtualFile[]; invalidFiles: string[]; errors: string[]; warnings: string[] }) {
 
-  return versions[pkg] || "latest";
+const seen = new Set<string>();
+
+for (const file of files) {
+
+const path = normalizePath(file.path);
+
+if (seen.has(path)) warnings.push(`Duplicate file path: ${path}`);
+
+seen.add(path);
+
+if (!path.startsWith("/")) invalidFiles.push(path);
+
+if (file.content === null) continue;
+
+const content = String(file.content || "");
+
+if (!content.trim()) warnings.push(`Empty file: ${path}`);
+
+if (/\.(tsx|ts|jsx|js)$/.test(path)) {
+
+const balance = checkBalancedSyntax(content);
+
+if (!balance.ok) errors.push(`${path}: ${balance.error}`);
+
+if (content.includes("<<<<<<<") || content.includes("=======") || content.includes(">>>>>>>")) errors.push(`${path}: merge conflict markers found.`);
+
 }
 
-function isDevDependency(pkg: string) {
-  return [
-    "vite",
-    "typescript",
-    "@vitejs/plugin-react",
-    "tailwindcss",
-    "eslint",
-    "prettier",
-    "vitest",
-    "@types/react",
-    "@types/react-dom",
-    "@types/node",
-    "@capacitor/cli",
-    "@capacitor/android",
-  ].includes(pkg);
+if (path.endsWith(".json")) {
+
+try {
+
+JSON.parse(content);
+
+} catch {
+
+errors.push(`${path}: invalid JSON.`);
+
 }
 
-function isSourceFile(path: string) {
-  return [".ts", ".tsx", ".js", ".jsx"].some((ext) => path.endsWith(ext));
 }
 
-function isBuiltinPackage(packageName: string) {
-  return [
-    "fs",
-    "path",
-    "os",
-    "url",
-    "crypto",
-    "http",
-    "https",
-    "stream",
-    "buffer",
-    "events",
-    "util",
-  ].includes(packageName);
 }
 
-function detectIssueType(message: string) {
-  const lower = message.toLowerCase();
-
-  if (lower.includes("cannot find module")) return "missing_dependency";
-  if (lower.includes("invalid json")) return "json";
-  if (lower.includes("missing")) return "missing_file";
-
-  return "unknown";
 }
 
-function detectTargetFromFiles(files: VirtualFile[]) {
-  const text = files
-    .map((file) => `${file.path}\n${file.content || ""}`)
-    .join("\n")
-    .toLowerCase();
+function validateImports({ files, paths, missingImports, missingDependencies }: { files: VirtualFile[]; paths: string[]; missingImports: string[]; missingDependencies: string[] }) {
 
-  if (text.includes("capacitor") || text.includes("android")) return "android";
-  return "web";
+const packageJson = getPackageJson(files);
+
+const availableDeps = new Set([
+
+...Object.keys(packageJson.dependencies || {}),
+
+...Object.keys(packageJson.devDependencies || {}),
+
+...BUILTIN_MODULES,
+
+]);
+
+for (const file of files) {
+
+const path = normalizePath(file.path);
+
+const content = String(file.content || "");
+
+if (!/\.(ts|tsx|js|jsx)$/.test(path)) continue;
+
+for (const imported of extractImports(content)) {
+
+if (imported.startsWith(".") || imported.startsWith("/")) {
+
+const resolved = resolveLocalImport(path, imported, paths);
+
+if (!resolved) missingImports.push(`${path} -> ${imported}`);
+
+} else {
+
+const packageName = imported.startsWith("@") ? imported.split("/").slice(0, 2).join("/") : imported.split("/")[0];
+
+if (!availableDeps.has(packageName) && !availableDeps.has(imported)) missingDependencies.push(packageName);
+
+}
+
+}
+
+}
+
+}
+
+function validateReactRuntime({ files, warnings }: { files: VirtualFile[]; errors: string[]; warnings: string[] }) {
+
+const main = files.find((file) => ["/src/main.tsx", "/src/main.jsx"].includes(normalizePath(file.path)));
+
+if (!main?.content) return;
+
+if (!main.content.includes("createRoot")) warnings.push("main file does not use ReactDOM.createRoot.");
+
+}
+
+function validateAndroidReadiness({ paths, fileMap, warnings }: { paths: string[]; fileMap: Map<string, VirtualFile>; warnings: string[] }) {
+
+const all = Array.from(fileMap.values()).map((file) => `${file.path}\n${file.content || ""}`).join("\n").toLowerCase();
+
+if (!all.includes("android") && !all.includes("capacitor")) return;
+
+if (!paths.includes("/ANDROID_BUILD.md")) warnings.push("Android target missing /ANDROID_BUILD.md.");
+
+if (!paths.includes("/capacitor.config.ts") && !paths.includes("/capacitor.config.json")) warnings.push("Android target missing Capacitor config.");
+
+if (!paths.includes("/public/manifest.webmanifest")) warnings.push("Android target missing web manifest.");
+
+}
+
+function collectExternalImports(files: VirtualFile[]) {
+
+const imports = new Set<string>();
+
+for (const file of files) {
+
+const path = normalizePath(file.path);
+
+if (!/\.(ts|tsx|js|jsx)$/.test(path)) continue;
+
+for (const imported of extractImports(String(file.content || ""))) {
+
+if (!imported.startsWith(".") && !imported.startsWith("/")) imports.add(imported);
+
+}
+
+}
+
+return Array.from(imports);
+
+}
+
+function extractImports(content: string) {
+
+const imports = new Set<string>();
+
+const patterns = [/import\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g, /export\s+[\s\S]*?\s+from\s+["']([^"']+)["']/g, /import\(["']([^"']+)["']\)/g];
+
+for (const pattern of patterns) {
+
+let match: RegExpExecArray | null;
+
+while ((match = pattern.exec(content))) imports.add(match[1]);
+
+}
+
+return Array.from(imports);
+
+}
+
+function resolveLocalImport(fromPath: string, imported: string, paths: string[]) {
+
+const base = fromPath.split("/").slice(0, -1).join("/");
+
+const raw = imported.startsWith("/") ? normalizePath(imported) : normalizePath(`${base}/${imported}`);
+
+const normalized = normalizeSegments(raw);
+
+const candidates = [normalized, `${normalized}.ts`, `${normalized}.tsx`, `${normalized}.js`, `${normalized}.jsx`, `${normalized}.json`, `${normalized}/index.ts`, `${normalized}/index.tsx`, `${normalized}/index.js`, `${normalized}/index.jsx`];
+
+return candidates.find((candidate) => paths.includes(candidate));
+
+}
+
+function normalizeSegments(path: string) {
+
+const parts: string[] = [];
+
+for (const part of normalizePath(path).split("/")) {
+
+if (!part || part === ".") continue;
+
+if (part === "..") parts.pop();
+
+else parts.push(part);
+
+}
+
+return `/${parts.join("/")}`;
+
+}
+
+function getPackageJson(files: VirtualFile[]) {
+
+const packageFile = files.find((file) => normalizePath(file.path) === "/package.json");
+
+if (!packageFile?.content) return {};
+
+try {
+
+return JSON.parse(packageFile.content);
+
+} catch {
+
+return {};
+
+}
+
+}
+
+function ensureDep(deps: Record<string, string>, name: string, version: string, added: string[]) {
+
+if (!deps[name]) {
+
+deps[name] = version;
+
+added.push(name);
+
+}
+
+}
+
+function addKnownDependency(packageJson: any, packageName: string, addedDependencies: string[], addedDevDependencies: string[]) {
+
+if (!packageName) return;
+
+if (BUILTIN_MODULES.has(packageName)) return;
+
+if (packageJson.dependencies?.[packageName]) return;
+
+if (packageJson.devDependencies?.[packageName]) return;
+
+const devPackages = new Set(["typescript", "vite", "@vitejs/plugin-react", "@tailwindcss/vite"]);
+
+if (devPackages.has(packageName)) {
+
+packageJson.devDependencies[packageName] = "latest";
+
+addedDevDependencies.push(packageName);
+
+} else {
+
+packageJson.dependencies[packageName] = "latest";
+
+addedDependencies.push(packageName);
+
+}
+
+}
+
+function checkBalancedSyntax(content: string) {
+
+const pairs: Record<string, string> = { "(": ")", "{": "}", "[": "]" };
+
+const stack: string[] = [];
+
+let inString: string | null = null;
+
+let escaped = false;
+
+for (const char of content) {
+
+if (inString) {
+
+if (escaped) {
+
+escaped = false;
+
+continue;
+
+}
+
+if (char === "\\") {
+
+escaped = true;
+
+continue;
+
+}
+
+if (char === inString) inString = null;
+
+continue;
+
+}
+
+if (char === "\"" || char === "'" || char === "`") {
+
+inString = char;
+
+continue;
+
+}
+
+if (pairs[char]) stack.push(pairs[char]);
+
+else if ([")", "}", "]"].includes(char)) {
+
+const expected = stack.pop();
+
+if (expected !== char) return { ok: false, error: `unbalanced syntax near '${char}'` };
+
+}
+
+}
+
+if (stack.length) return { ok: false, error: `unclosed '${stack[stack.length - 1]}'` };
+
+return { ok: true };
+
+}
+
+function normalizeFiles(files: VirtualFile[]) {
+
+return (files || []).filter((file) => file && file.path);
+
 }
