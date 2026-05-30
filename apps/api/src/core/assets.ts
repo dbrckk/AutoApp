@@ -1,652 +1,485 @@
 import type { VirtualFile } from "./types";
-import { normalizePath } from "./files";
-import { detectTarget, getTargetProfile } from "./targets";
 
 export function createGeneratedGameAssets(prompt: string): VirtualFile[] {
-  const target = detectTarget(prompt);
 
-  if (!target.includes("game")) return [];
+const theme = detectTheme(prompt);
 
-  return [
-    {
-      path: "/src/assets/player.svg",
-      content: `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
-  <defs>
-    <linearGradient id="ship" x1="0" x2="1" y1="0" y2="1">
-      <stop stop-color="#67e8f9"/>
-      <stop offset=".5" stop-color="#818cf8"/>
-      <stop offset="1" stop-color="#c084fc"/>
-    </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="4" result="b"/>
-      <feMerge>
-        <feMergeNode in="b"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-  <path filter="url(#glow)" d="M80 10 L136 146 L80 118 L24 146 Z" fill="url(#ship)" stroke="#f8fafc" stroke-opacity=".9" stroke-width="5"/>
-  <circle cx="80" cy="72" r="18" fill="#020617" stroke="#f8fafc" stroke-opacity=".9" stroke-width="4"/>
-  <path d="M58 112 C70 124 90 124 102 112" stroke="#f8fafc" stroke-width="5" stroke-linecap="round" fill="none"/>
-</svg>`,
-    },
-    {
-      path: "/src/assets/enemy.svg",
-      content: `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
-  <defs>
-    <radialGradient id="enemy" cx=".5" cy=".4">
-      <stop stop-color="#fb7185"/>
-      <stop offset=".55" stop-color="#ef4444"/>
-      <stop offset="1" stop-color="#7f1d1d"/>
-    </radialGradient>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000" flood-opacity=".55"/>
-    </filter>
-  </defs>
-  <path filter="url(#shadow)" d="M80 12 C122 12 148 43 148 82 C148 124 118 148 80 148 C42 148 12 124 12 82 C12 43 38 12 80 12Z" fill="url(#enemy)" stroke="#fff1f2" stroke-opacity=".8" stroke-width="5"/>
-  <circle cx="56" cy="70" r="10" fill="#020617"/>
-  <circle cx="104" cy="70" r="10" fill="#020617"/>
-  <path d="M50 108 Q80 132 110 108" stroke="#020617" stroke-width="8" fill="none" stroke-linecap="round"/>
-  <path d="M34 38 L10 18 M126 38 L150 18" stroke="#fb7185" stroke-width="8" stroke-linecap="round"/>
-</svg>`,
-    },
-    {
-      path: "/src/assets/coin.svg",
-      content: `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="coin" x1="0" x2="1">
-      <stop stop-color="#fef08a"/>
-      <stop offset=".5" stop-color="#facc15"/>
-      <stop offset="1" stop-color="#ca8a04"/>
-    </linearGradient>
-  </defs>
-  <circle cx="64" cy="64" r="50" fill="url(#coin)" stroke="#fff7ad" stroke-width="8"/>
-  <circle cx="64" cy="64" r="32" fill="none" stroke="#a16207" stroke-width="6"/>
-  <path d="M64 30 L72 54 L98 54 L76 69 L84 96 L64 80 L44 96 L52 69 L30 54 L56 54Z" fill="#fff7ad"/>
-</svg>`,
-    },
-    {
-      path: "/src/assets/background-stars.svg",
-      content: `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
-  <rect width="800" height="800" fill="#020617"/>
-  <g fill="#ffffff">
-    <circle cx="80" cy="120" r="2" opacity=".7"/>
-    <circle cx="220" cy="90" r="1.5" opacity=".5"/>
-    <circle cx="520" cy="180" r="2.5" opacity=".8"/>
-    <circle cx="700" cy="260" r="1.5" opacity=".5"/>
-    <circle cx="140" cy="420" r="2" opacity=".6"/>
-    <circle cx="390" cy="360" r="1.5" opacity=".5"/>
-    <circle cx="620" cy="520" r="2.5" opacity=".7"/>
-    <circle cx="300" cy="700" r="2" opacity=".6"/>
-    <circle cx="740" cy="720" r="1.5" opacity=".5"/>
-  </g>
-</svg>`,
-    },
-    {
-      path: "/src/assets/fx.css",
-      content: `.sprite-glow {
-  filter: drop-shadow(0 0 14px rgba(103, 232, 249, .7));
-}
+return [
 
-.hit-flash {
-  animation: hitFlash .24s ease-out;
-}
+{ path: "/src/data/gameBalance.ts", content: buildGameBalance(theme) },
 
-.collect-pop {
-  animation: collectPop .36s cubic-bezier(.2, 1.4, .4, 1);
-}
+{ path: "/src/data/retention.ts", content: buildRetentionData() },
 
-.level-pulse {
-  animation: levelPulse .8s ease-in-out infinite alternate;
-}
+{ path: "/src/data/monetization.ts", content: buildMonetizationData() },
 
-@keyframes hitFlash {
-  0% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.16); opacity: .65; }
-  100% { transform: scale(1); opacity: 1; }
-}
+{ path: "/src/assets/game-icons.svg", content: buildSvgIcons(theme) },
 
-@keyframes collectPop {
-  0% { transform: scale(.6) rotate(-8deg); opacity: .2; }
-  70% { transform: scale(1.18) rotate(4deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
-}
+{ path: "/src/game/effects.ts", content: buildEffectsSystem() },
 
-@keyframes levelPulse {
-  from { box-shadow: 0 0 20px rgba(34, 211, 238, .25); }
-  to { box-shadow: 0 0 42px rgba(168, 85, 247, .55); }
-}
-`,
-    },
-    {
-      path: "/src/assets/sprite-manifest.json",
-      content: JSON.stringify(
-        {
-          generated: true,
-          type: "svg-sprites",
-          style: "premium-neon-arcade",
-          assets: [
-            "/src/assets/player.svg",
-            "/src/assets/enemy.svg",
-            "/src/assets/coin.svg",
-            "/src/assets/background-stars.svg",
-            "/src/assets/fx.css",
-          ],
-          usage:
-            "Import SVG paths or reference them as image sources in React/Vite. Import fx.css for hit, collect and glow effects.",
-        },
-        null,
-        2
-      ),
-    },
-  ];
+];
+
 }
 
 export function createAndroidCapacitorFiles(prompt: string): VirtualFile[] {
-  const target = detectTarget(prompt);
 
-  if (!target.includes("android")) return [];
+return [
 
-  return [
-    {
-      path: "/capacitor.config.ts",
-      content: `import type { CapacitorConfig } from "@capacitor/cli";
+{
 
-const config: CapacitorConfig = {
-  appId: "com.autoapp.generated",
-  appName: "AutoApp Generated Game",
-  webDir: "dist",
-  bundledWebRuntime: false,
-  server: {
-    androidScheme: "https"
-  }
+path: "/capacitor.config.ts",
+
+content:
+
+'import type { CapacitorConfig } from "@capacitor/cli";\n\nconst config: CapacitorConfig = {\n appId: "com.autoapp.generatedgame",\n appName: "AutoApp Game",\n webDir: "dist",\n bundledWebRuntime: false,\n server: {\n androidScheme: "https"\n }\n};\n\nexport default config;\n',
+
+},
+
+{
+
+path: "/ANDROID_BUILD.md",
+
+content: [
+
+"# Android build guide",
+
+"",
+
+"This project is Android-ready through Capacitor.",
+
+"",
+
+"## Commands",
+
+"",
+
+"```bash",
+
+"npm install",
+
+"npm run build",
+
+"npm install @capacitor/core @capacitor/cli @capacitor/android",
+
+"npx cap add android",
+
+"npx cap sync android",
+
+"npx cap open android",
+
+"```",
+
+"",
+
+"## Notes",
+
+"",
+
+"- Cloudflare Workers cannot build APK/AAB files.",
+
+"- Use Android Studio or a real CI Android build machine.",
+
+"- Configure real app icons, signing keys, AdMob IDs, and Play Store metadata before release.",
+
+"- Keep monetization fair and avoid pay-to-win mechanics.",
+
+].join("\n"),
+
+},
+
+{
+
+path: "/public/manifest.webmanifest",
+
+content: JSON.stringify(
+
+{
+
+name: "AutoApp Game",
+
+short_name: "AutoGame",
+
+start_url: "/",
+
+display: "standalone",
+
+background_color: "#050505",
+
+theme_color: "#050505",
+
+orientation: "portrait",
+
+icons: [
+
+{ src: "/icons/icon-192.svg", sizes: "192x192", type: "image/svg+xml" },
+
+{ src: "/icons/icon-512.svg", sizes: "512x512", type: "image/svg+xml" },
+
+],
+
+},
+
+null,
+
+2
+
+),
+
+},
+
+{ path: "/public/icons/icon-192.svg", content: buildAppIcon("192") },
+
+{ path: "/public/icons/icon-512.svg", content: buildAppIcon("512") },
+
+];
+
+}
+
+export function createFinalPackagingFiles({ prompt, target, files, score }: { prompt: string; target: string; files: VirtualFile[]; score: any }): VirtualFile[] {
+
+return [
+
+{
+
+path: "/README.md",
+
+content: [
+
+"# AutoApp Generated Project",
+
+"",
+
+"Production-oriented project generated and improved by AutoApp.",
+
+"",
+
+"## Target",
+
+"",
+
+`- ${target}`,
+
+"",
+
+"## Current quality",
+
+"",
+
+`- Score: ${score.total}/100`,
+
+`- Architecture: ${score.architecture}/100`,
+
+`- UI: ${score.ui}/100`,
+
+`- Mobile: ${score.mobile}/100`,
+
+`- Reliability: ${score.reliability}/100`,
+
+`- Gameplay: ${score.gameplay || 0}/100`,
+
+`- Retention: ${score.retention || 0}/100`,
+
+`- Android ready: ${score.androidReady || 0}/100`,
+
+"",
+
+"## Commands",
+
+"",
+
+"```bash",
+
+"npm install",
+
+"npm run build",
+
+"npm run preview",
+
+"```",
+
+"",
+
+"## Original prompt",
+
+"",
+
+"```txt",
+
+prompt,
+
+"```",
+
+].join("\n"),
+
+},
+
+];
+
+}
+
+function buildGameBalance(theme: string) {
+
+return `export type UpgradeDefinition = {
+
+id: string;
+
+name: string;
+
+description: string;
+
+maxLevel: number;
+
+baseCost: number;
+
+costGrowth: number;
+
+effectPerLevel: number;
+
 };
 
-export default config;
-`,
-    },
-    {
-      path: "/manifest.webmanifest",
-      content: JSON.stringify(
-        {
-          name: "AutoApp Generated Game",
-          short_name: "AutoGame",
-          description:
-            "A mobile-first Android-ready game generated by AutoApp.",
-          start_url: "/",
-          display: "standalone",
-          background_color: "#020617",
-          theme_color: "#020617",
-          orientation: "portrait",
-          icons: [
-            {
-              src: "/icons/icon-192.svg",
-              sizes: "192x192",
-              type: "image/svg+xml",
-              purpose: "any maskable",
-            },
-            {
-              src: "/icons/icon-512.svg",
-              sizes: "512x512",
-              type: "image/svg+xml",
-              purpose: "any maskable",
-            },
-          ],
-        },
-        null,
-        2
-      ),
-    },
-    {
-      path: "/public/icons/icon-192.svg",
-      content: createAppIconSvg(192),
-    },
-    {
-      path: "/public/icons/icon-512.svg",
-      content: createAppIconSvg(512),
-    },
-    {
-      path: "/ANDROID_BUILD.md",
-      content: `# Android Build Guide
+export const GAME_THEME = ${JSON.stringify(theme)};
 
-This project is Android-ready through Capacitor.
+export const PLAYER_BASE = {
 
-## Requirements
+health: 100,
 
-- Node.js 20+
-- Android Studio
-- Java JDK 17+
-- Android SDK installed
+speed: 1,
 
-## Install
+magnetRadius: 80,
 
-\`\`\`bash
-npm install
-\`\`\`
+comboWindowMs: 1400,
 
-## Build web app
+reviveCost: 1,
 
-\`\`\`bash
-npm run build
-\`\`\`
+};
 
-## Add Android platform
+export const DIFFICULTY_CURVE = {
 
-\`\`\`bash
-npm install @capacitor/core @capacitor/cli @capacitor/android
-npx cap add android
-\`\`\`
+spawnGrowth: 0.08,
 
-## Sync web build to Android
+speedGrowth: 0.035,
 
-\`\`\`bash
-npx cap sync android
-\`\`\`
+rewardGrowth: 0.06,
 
-## Open Android Studio
+bossEveryRuns: 5,
 
-\`\`\`bash
-npx cap open android
-\`\`\`
+};
 
-## Build APK / AAB
+export const UPGRADES: UpgradeDefinition[] = [
 
-In Android Studio:
+{ id: "speed", name: "Hyper Steps", description: "Move faster and recover from mistakes.", maxLevel: 20, baseCost: 80, costGrowth: 1.18, effectPerLevel: 0.035 },
 
-\`\`\`txt
-Build → Generate Signed Bundle / APK
-\`\`\`
+{ id: "magnet", name: "Reward Magnet", description: "Collect rewards from farther away.", maxLevel: 20, baseCost: 70, costGrowth: 1.16, effectPerLevel: 8 },
 
-## Notes
+{ id: "combo", name: "Combo Core", description: "Keep score multipliers active longer.", maxLevel: 15, baseCost: 110, costGrowth: 1.2, effectPerLevel: 120 },
 
-- The app is generated as a mobile-first web game.
-- Capacitor wraps it into a native Android shell.
-- For Play Store release, replace appId, appName, icons and signing config.
-`,
-    },
-  ];
+{ id: "shield", name: "Impact Shield", description: "Start runs with extra protection.", maxLevel: 10, baseCost: 160, costGrowth: 1.24, effectPerLevel: 1 },
+
+];
+
+export const REWARD_TABLE = {
+
+baseCoins: 24,
+
+perfectRunBonus: 75,
+
+comboMilestones: [5, 10, 20, 35, 50],
+
+missionBonus: 120,
+
+};
+
+`;
+
 }
 
-export function createAppIconSvg(size: number): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <defs>
-    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-      <stop stop-color="#020617"/>
-      <stop offset=".55" stop-color="#312e81"/>
-      <stop offset="1" stop-color="#0891b2"/>
-    </linearGradient>
-    <linearGradient id="ship" x1="0" x2="1" y1="0" y2="1">
-      <stop stop-color="#67e8f9"/>
-      <stop offset="1" stop-color="#c084fc"/>
-    </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="${Math.max(4, size / 32)}" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-  <rect width="${size}" height="${size}" rx="${size * 0.22}" fill="url(#bg)"/>
-  <circle cx="${size * 0.72}" cy="${size * 0.24}" r="${size * 0.12}" fill="#facc15" opacity=".9"/>
-  <path filter="url(#glow)" d="M${size * 0.5} ${size * 0.16} L${size * 0.78} ${size * 0.78} L${size * 0.5} ${size * 0.64} L${size * 0.22} ${size * 0.78} Z" fill="url(#ship)" stroke="white" stroke-width="${size * 0.035}" stroke-linejoin="round"/>
+function buildRetentionData() {
+
+return `export const DAILY_REWARDS = [
+
+{ day: 1, coins: 100, gems: 0, label: "Starter Boost" },
+
+{ day: 2, coins: 140, gems: 0, label: "Momentum" },
+
+{ day: 3, coins: 180, gems: 1, label: "Rare Spark" },
+
+{ day: 4, coins: 240, gems: 1, label: "Power Push" },
+
+{ day: 5, coins: 320, gems: 2, label: "Epic Cache" },
+
+{ day: 6, coins: 420, gems: 2, label: "Master Cache" },
+
+{ day: 7, coins: 600, gems: 5, label: "Legendary Drop" },
+
+];
+
+export const MISSIONS = [
+
+{ id: "combo_10", title: "Reach a 10x combo", rewardCoins: 120 },
+
+{ id: "survive_90", title: "Survive for 90 seconds", rewardCoins: 160 },
+
+{ id: "collect_200", title: "Collect 200 shards", rewardCoins: 180 },
+
+{ id: "upgrade_once", title: "Buy any upgrade", rewardCoins: 90 },
+
+];
+
+export const ACHIEVEMENTS = [
+
+{ id: "first_run", title: "First Run", rewardCoins: 50 },
+
+{ id: "first_upgrade", title: "First Upgrade", rewardCoins: 80 },
+
+{ id: "combo_master", title: "Combo Master", rewardCoins: 300 },
+
+{ id: "week_streak", title: "7-Day Streak", rewardCoins: 700 },
+
+];
+
+`;
+
+}
+
+function buildMonetizationData() {
+
+return `export const MONETIZATION_CONFIG = {
+
+rewardedAds: {
+
+enabled: true,
+
+placements: [
+
+{ id: "double_rewards", label: "Double run rewards", cooldownSeconds: 45 },
+
+{ id: "revive_once", label: "One revive per run", cooldownSeconds: 120 },
+
+{ id: "daily_bonus", label: "Bonus daily chest", cooldownSeconds: 300 },
+
+],
+
+},
+
+cosmetics: {
+
+enabled: true,
+
+noPayToWin: true,
+
+starterSkins: ["Nova", "Pulse", "Ion"],
+
+},
+
+battlePass: {
+
+enabled: true,
+
+freeTrack: true,
+
+premiumTrackHook: true,
+
+noPowerLockedBehindPremium: true,
+
+},
+
+};
+
+export function canShowRewardedAd(lastShownAt: number, cooldownSeconds: number) {
+
+return Date.now() - lastShownAt >= cooldownSeconds * 1000;
+
+}
+
+`;
+
+}
+
+function buildSvgIcons(theme: string) {
+
+return `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+
+<symbol id="icon-player" viewBox="0 0 64 64"><path d="M32 4L58 54H6L32 4Z" fill="url(#g1)"/></symbol>
+
+<symbol id="icon-coin" viewBox="0 0 64 64"><circle cx="32" cy="32" r="24" fill="#facc15"/><circle cx="32" cy="32" r="14" fill="#f59e0b"/></symbol>
+
+<symbol id="icon-gem" viewBox="0 0 64 64"><path d="M12 22L24 8H40L52 22L32 58L12 22Z" fill="#38bdf8"/></symbol>
+
+<defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs>
+
+<metadata>${theme}</metadata>
+
 </svg>`;
+
 }
 
-export function createFinalPackagingFiles({
-  prompt,
-  target,
-  files,
-  score,
-}: {
-  prompt: string;
-  target: string;
-  files: VirtualFile[];
-  score: any;
-}): VirtualFile[] {
-  const profile = getTargetProfile(target);
-  const isAndroid = target.includes("android");
-  const isGame = target.includes("game");
-  const paths = files.map((file) => normalizePath(file.path));
+function buildEffectsSystem() {
 
-  const additions: VirtualFile[] = [];
+return `export type Particle = {
 
-  additions.push({
-    path: "/README.md",
-    content: createFinalReadme({
-      prompt,
-      target,
-      profile,
-      score,
-      isAndroid,
-      isGame,
-    }),
-  });
+id: string;
 
-  additions.push({
-    path: "/.env.example",
-    content: createFinalEnvExample(target),
-  });
+x: number;
 
-  additions.push({
-    path: "/DEPLOYMENT.md",
-    content: createDeploymentGuide({
-      isAndroid,
-      isGame,
-    }),
-  });
+y: number;
 
-  additions.push({
-    path: "/RELEASE_CHECKLIST.md",
-    content: createReleaseChecklist({
-      target,
-      profile,
-      isAndroid,
-      isGame,
-    }),
-  });
+vx: number;
 
-  if (!paths.includes("/robots.txt")) {
-    additions.push({
-      path: "/robots.txt",
-      content: "User-agent: *\nAllow: /\nSitemap: /sitemap.xml\n",
-    });
-  }
+vy: number;
 
-  if (!paths.includes("/sitemap.xml")) {
-    additions.push({
-      path: "/sitemap.xml",
-      content:
-        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>https://example.com/</loc>\n    <priority>1.0</priority>\n  </url>\n</urlset>\n',
-    });
-  }
+life: number;
 
-  if (isGame && !paths.includes("/src/assets/sprite-manifest.json")) {
-    additions.push(...createGeneratedGameAssets(prompt));
-  }
+color: string;
 
-  if (isAndroid) {
-    additions.push(...createAndroidCapacitorFiles(prompt));
-  }
+size: number;
 
-  return additions;
+};
+
+export function createBurst(x: number, y: number, amount = 16): Particle[] {
+
+return Array.from({ length: amount }).map((_, index) => {
+
+const angle = (Math.PI * 2 * index) / amount;
+
+const speed = 1 + Math.random() * 3;
+
+return { id: crypto.randomUUID(), x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, color: index % 2 === 0 ? "#22d3ee" : "#a78bfa", size: 3 + Math.random() * 5 };
+
+});
+
 }
 
-function createFinalReadme({
-  prompt,
-  target,
-  profile,
-  score,
-  isAndroid,
-  isGame,
-}: {
-  prompt: string;
-  target: string;
-  profile: ReturnType<typeof getTargetProfile>;
-  score: any;
-  isAndroid: boolean;
-  isGame: boolean;
-}) {
-  return `# AutoApp Generated Project
+export function updateParticles(particles: Particle[], delta: number) {
 
-## Purpose
+return particles
 
-${prompt}
+.map((particle) => ({ ...particle, x: particle.x + particle.vx * delta, y: particle.y + particle.vy * delta, vy: particle.vy + 0.012 * delta, life: particle.life - 0.018 * delta }))
 
-## Target
+.filter((particle) => particle.life > 0);
 
-${profile.label} (${target})
-
-## Current Quality Score
-
-${score?.total || 0}/100
-
-## Included Capabilities
-
-${profile.requiredFeatures.map((item) => `- ${item}`).join("\n")}
-
-## Project Type
-
-${isGame ? "- Game-ready project with gameplay, scoring, feedback and assets." : "- Web application project."}
-${isAndroid ? "- Android-ready through Capacitor." : "- Web deployment-ready."}
-
-## Install
-
-\`\`\`bash
-npm install
-\`\`\`
-
-## Development
-
-\`\`\`bash
-npm run dev
-\`\`\`
-
-## Build
-
-\`\`\`bash
-npm run build
-\`\`\`
-
-## Preview
-
-\`\`\`bash
-npm run preview
-\`\`\`
-
-## Deploy on Cloudflare Pages
-
-Use:
-
-\`\`\`txt
-Build command: npm run build
-Build output directory: dist
-Root directory: /
-\`\`\`
-
-${
-  isAndroid
-    ? `## Android Build
-
-This project includes Capacitor support.
-
-Read:
-
-\`\`\`txt
-ANDROID_BUILD.md
-\`\`\`
-
-Basic commands:
-
-\`\`\`bash
-npm install
-npm run build
-npm install @capacitor/core @capacitor/cli @capacitor/android
-npx cap add android
-npx cap sync android
-npx cap open android
-\`\`\`
-`
-    : ""
 }
 
-## Notes
-
-This project was generated autonomously by AutoApp using phased generation, virtual build checks, dependency repair and final packaging.
 `;
+
 }
 
-function createFinalEnvExample(target: string) {
-  if (target === "ai-tool") {
-    return `VITE_APP_NAME="AutoApp Generated AI Tool"
-VITE_API_BASE_URL=""
-VITE_DEFAULT_MODEL="gemini-2.5-flash"
-`;
-  }
+function buildAppIcon(size: string) {
 
-  if (target.includes("android")) {
-    return `VITE_APP_NAME="AutoApp Android App"
-VITE_TARGET_PLATFORM="android"
-`;
-  }
+return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#050505"/><circle cx="256" cy="256" r="178" fill="#111827"/><path d="M256 82L396 390H116L256 82Z" fill="url(#g)"/><circle cx="256" cy="278" r="54" fill="#050505" opacity=".65"/><defs><linearGradient id="g" x1="116" x2="396" y1="82" y2="390"><stop stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs></svg>`;
 
-  if (target.includes("game")) {
-    return `VITE_APP_NAME="AutoApp Game"
-VITE_GAME_MODE="arcade"
-`;
-  }
-
-  return `VITE_APP_NAME="AutoApp Generated Project"
-`;
 }
 
-function createDeploymentGuide({
-  isAndroid,
-  isGame,
-}: {
-  isAndroid: boolean;
-  isGame: boolean;
-}) {
-  return `# Deployment Guide
+function detectTheme(prompt: string) {
 
-## Web Deployment
+const lower = prompt.toLowerCase();
 
-Recommended free deployment:
+if (lower.includes("space")) return "space neon";
 
-- GitHub
-- Cloudflare Pages
+if (lower.includes("ninja")) return "neon ninja";
 
-## Cloudflare Pages Settings
+if (lower.includes("survivor")) return "survival arena";
 
-\`\`\`txt
-Framework preset: Vite
-Build command: npm run build
-Build output directory: dist
-Root directory: /
-\`\`\`
+if (lower.includes("runner")) return "speed runner";
 
-## Build Locally
+return "neon arcade";
 
-\`\`\`bash
-npm install
-npm run build
-\`\`\`
-
-## Game Notes
-
-${
-  isGame
-    ? `This project includes local game assets and should work as a mobile-first web game.
-
-Check:
-
-\`\`\`txt
-/src/assets
-\`\`\`
-`
-    : "This project is a standard web app."
 }
-
-## Android Notes
-
-${
-  isAndroid
-    ? `This project is Android-ready through Capacitor.
-
-Cloudflare Workers cannot build APK/AAB files.
-
-To build Android:
-
-\`\`\`bash
-npm install
-npm run build
-npm install @capacitor/core @capacitor/cli @capacitor/android
-npx cap add android
-npx cap sync android
-npx cap open android
-\`\`\`
-
-Then build APK/AAB inside Android Studio.
-`
-    : "Android packaging is not enabled for this target."
-}
-
-## Production Checklist
-
-- Verify npm run build
-- Test mobile layout
-- Test primary user flow
-- Check accessibility
-- Replace placeholder domain in sitemap.xml
-- Configure environment variables
-- Deploy to Cloudflare Pages
-`;
-}
-
-function createReleaseChecklist({
-  target,
-  profile,
-  isAndroid,
-  isGame,
-}: {
-  target: string;
-  profile: ReturnType<typeof getTargetProfile>;
-  isAndroid: boolean;
-  isGame: boolean;
-}) {
-  return `# Release Checklist
-
-## Target
-
-${profile.label} (${target})
-
-## Required Feature Checks
-
-${profile.requiredFeatures.map((item) => `- [ ] ${item}`).join("\n")}
-
-## Quality Checks
-
-- [ ] App loads without runtime errors
-- [ ] npm install works
-- [ ] npm run build works
-- [ ] Main user flow works
-- [ ] Mobile layout works
-- [ ] Empty states are visible
-- [ ] Loading states are visible
-- [ ] Error states are visible
-- [ ] Buttons have clear labels
-- [ ] SEO metadata is present
-- [ ] README is accurate
-
-${
-  isGame
-    ? `## Game Checks
-
-- [ ] Start screen works
-- [ ] Controls work on mobile
-- [ ] Score updates correctly
-- [ ] Difficulty progresses
-- [ ] Game over screen works
-- [ ] Restart works
-- [ ] Sprites/assets load correctly
-- [ ] Animations feel responsive
-`
-    : ""
-}
-
-${
-  isAndroid
-    ? `## Android Checks
-
-- [ ] manifest.webmanifest is present
-- [ ] capacitor.config.ts is present
-- [ ] Icons are present
-- [ ] npm run build succeeds
-- [ ] npx cap sync android works
-- [ ] Android Studio opens project
-- [ ] APK/AAB builds successfully
-`
-    : ""
-}
-`;
-            }
