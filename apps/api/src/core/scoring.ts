@@ -1,256 +1,493 @@
 import type { VirtualFile } from "./types";
-import { clamp, normalizePath, readPackageJson } from "./files";
 
-export function scoreProject(files: VirtualFile[]) {
-  const paths = files.map((file) => normalizePath(file.path));
-  const all = files
-    .map((file) => file.content || "")
-    .join("\n")
-    .toLowerCase();
+import { normalizePath } from "./files";
 
-  const appFile = files.find(
-    (file) => normalizePath(file.path) === "/src/App.tsx"
-  );
+export type ScoreBreakdown = {
 
-  const appContent = String(appFile?.content || "").toLowerCase();
+total: number;
 
-  const packageJson = readPackageJson(files);
+architecture: number;
 
-  const dependencies = {
-    ...(packageJson?.dependencies || {}),
-    ...(packageJson?.devDependencies || {}),
-  };
+ui: number;
 
-  const architecture = clamp(
-    8 +
-      Number(paths.includes("/package.json")) * 10 +
-      Number(paths.includes("/index.html")) * 8 +
-      Number(paths.includes("/vite.config.ts") || paths.includes("/vite.config.js")) * 8 +
-      Number(paths.includes("/tsconfig.json")) * 6 +
-      Number(paths.includes("/src/main.tsx") || paths.includes("/src/main.jsx")) * 8 +
-      Number(paths.includes("/src/App.tsx") || paths.includes("/src/App.jsx")) * 8 +
-      Number(paths.some((path) => path.includes("/components/"))) * 12 +
-      Number(paths.some((path) => path.includes("/lib/"))) * 8 +
-      Number(paths.some((path) => path.includes("/hooks/"))) * 6 +
-      Number(all.includes("type ") || all.includes("interface ")) * 8 +
-      Number(files.length >= 7) * 8 +
-      Number(files.length >= 12) * 8
-  );
+mobile: number;
 
-  const ui = clamp(
-    5 +
-      Number(all.includes("rounded")) * 8 +
-      Number(all.includes("shadow")) * 8 +
-      Number(all.includes("border")) * 6 +
-      Number(all.includes("gradient") || all.includes("bg-[")) * 8 +
-      Number(all.includes("grid")) * 6 +
-      Number(all.includes("card")) * 6 +
-      Number(all.includes("sidebar") || all.includes("nav")) * 7 +
-      Number(all.includes("modal") || all.includes("panel")) * 5 +
-      Number(all.includes("status") || all.includes("badge") || all.includes("chip")) * 6 +
-      Number(all.includes("hover:") || all.includes("transition")) * 6 +
-      Number(appContent.length > 6000) * 8 +
-      Number(appContent.length > 12000) * 8 +
-      Number(all.includes("dark") || all.includes("#050505")) * 6
-  );
+reliability: number;
 
-  const mobile = clamp(
-    5 +
-      Number(all.includes("viewport")) * 12 +
-      Number(all.includes("sm:") || all.includes("md:")) * 14 +
-      Number(all.includes("lg:") || all.includes("xl:")) * 8 +
-      Number(all.includes("flex")) * 8 +
-      Number(all.includes("grid")) * 8 +
-      Number(all.includes("min-h-screen")) * 8 +
-      Number(all.includes("max-w-")) * 8 +
-      Number(all.includes("overflow-auto") || all.includes("overflow-hidden")) * 6 +
-      Number(all.includes("truncate") || all.includes("line-clamp")) * 5 +
-      Number(appContent.includes("md:grid") || appContent.includes("lg:grid")) * 10
-  );
+productDepth: number;
 
-  const performance = clamp(
-    25 +
-      Number(paths.includes("/vite.config.ts") || paths.includes("/vite.config.js")) * 14 +
-      Number(!all.includes("setinterval(")) * 8 +
-      Number(!all.includes("while (true")) * 8 +
-      Number(appContent.length < 45000) * 10 +
-      Number(!all.includes("base64,")) * 10 +
-      Number(!all.includes("console.log")) * 8 +
-      Number(files.length < 60) * 7
-  );
+completeness: number;
 
-  const accessibility = clamp(
-    5 +
-      Number(all.includes("aria-")) * 14 +
-      Number(all.includes("alt=")) * 10 +
-      Number(all.includes("<label") || all.includes("label")) * 10 +
-      Number(all.includes("<button")) * 8 +
-      Number(all.includes("<main")) * 8 +
-      Number(all.includes("<section")) * 8 +
-      Number(all.includes("<nav")) * 8 +
-      Number(all.includes("focus:") || all.includes("focus-visible")) * 8 +
-      Number(!all.includes("onclick={undefined")) * 6 +
-      Number(all.includes("disabled")) * 6
-  );
+productionReadiness: number;
 
-  const seo = clamp(
-    5 +
-      Number(all.includes("<title>") || all.includes("title>")) * 10 +
-      Number(all.includes("description")) * 12 +
-      Number(all.includes("og:title")) * 12 +
-      Number(all.includes("og:description")) * 10 +
-      Number(all.includes("twitter:card")) * 8 +
-      Number(paths.includes("/robots.txt")) * 8 +
-      Number(paths.includes("/sitemap.xml")) * 8 +
-      Number(all.includes("schema.org") || all.includes("json-ld")) * 12 +
-      Number(paths.includes("/README.md")) * 10
-  );
+gameplay: number;
 
-  const maintainability = clamp(
-    8 +
-      Number(all.includes("const ")) * 6 +
-      Number(all.includes("function ")) * 6 +
-      Number(all.includes("type ") || all.includes("interface ")) * 8 +
-      Number(paths.some((path) => path.includes("/components/"))) * 10 +
-      Number(paths.some((path) => path.includes("/lib/"))) * 8 +
-      Number(paths.some((path) => path.includes("/hooks/"))) * 8 +
-      Number(!all.includes("any")) * 8 +
-      Number(!all.includes("todo")) * 8 +
-      Number(!all.includes("lorem ipsum")) * 8 +
-      Number(paths.includes("/README.md")) * 8 +
-      Number(appContent.length > 4000 && appContent.length < 45000) * 12
-  );
+retention: number;
 
-  const monetization = clamp(
-    5 +
-      Number(all.includes("pricing")) * 18 +
-      Number(all.includes("checkout") || all.includes("subscribe")) * 16 +
-      Number(all.includes("plan") || all.includes("premium")) * 12 +
-      Number(all.includes("cta") || all.includes("get started") || all.includes("start now")) * 12 +
-      Number(all.includes("lead") || all.includes("conversion")) * 10 +
-      Number(all.includes("testimonial") || all.includes("social proof")) * 10 +
-      Number(all.includes("faq")) * 8
-  );
+monetization: number;
 
-  const reliability = clamp(
-    5 +
-      Number(packageJson?.scripts?.build) * 12 +
-      Number(packageJson?.scripts?.dev) * 8 +
-      Number(dependencies.react) * 8 +
-      Number(dependencies["react-dom"]) * 8 +
-      Number(dependencies.vite || packageJson?.devDependencies?.vite) * 8 +
-      Number(all.includes("try")) * 8 +
-      Number(all.includes("catch")) * 8 +
-      Number(all.includes("error")) * 8 +
-      Number(all.includes("loading")) * 8 +
-      Number(all.includes("empty")) * 8 +
-      Number(all.includes("fallback")) * 8 +
-      Number(paths.includes("/.env.example")) * 8
-  );
+androidReady: number;
 
-  const productDepth = clamp(
-    5 +
-      Number(appContent.includes("dashboard")) * 10 +
-      Number(appContent.includes("project")) * 8 +
-      Number(appContent.includes("analytics") || appContent.includes("metric")) * 8 +
-      Number(appContent.includes("settings")) * 6 +
-      Number(appContent.includes("history")) * 6 +
-      Number(appContent.includes("export")) * 6 +
-      Number(appContent.includes("deploy")) * 6 +
-      Number(appContent.includes("workflow") || appContent.includes("pipeline")) * 8 +
-      Number(appContent.includes("automation") || appContent.includes("autopilot")) * 8 +
-      Number(appContent.includes("user")) * 6 +
-      Number(appContent.includes("team")) * 6 +
-      Number(appContent.includes("search") || appContent.includes("filter")) * 8 +
-      Number(appContent.includes("game") || appContent.includes("level") || appContent.includes("score")) * 8
-  );
+antiPlaceholder: number;
 
-  const total = clamp(
-    architecture * 0.14 +
-      ui * 0.13 +
-      mobile * 0.11 +
-      performance * 0.08 +
-      accessibility * 0.09 +
-      seo * 0.08 +
-      maintainability * 0.12 +
-      monetization * 0.07 +
-      reliability * 0.12 +
-      productDepth * 0.06
-  );
+};
 
-  return {
-    ui,
-    mobile,
-    performance,
-    accessibility,
-    seo,
-    maintainability,
-    architecture,
-    monetization,
-    reliability,
-    productDepth,
-    total,
-  };
+export function scoreProject(files: VirtualFile[]): ScoreBreakdown {
+
+const normalized = normalizeFiles(files);
+
+const text = normalized.map((file) => `${file.path}\n${file.content || ""}`).join("\n\n");
+
+const lower = text.toLowerCase();
+
+const paths = normalized.map((file) => normalizePath(file.path));
+
+const architecture = scoreArchitecture(paths, lower);
+
+const ui = scoreUi(lower, paths);
+
+const mobile = scoreMobile(lower);
+
+const reliability = scoreReliability(lower, paths);
+
+const productDepth = scoreProductDepth(lower, paths);
+
+const completeness = scoreCompleteness(paths, lower);
+
+const productionReadiness = scoreProductionReadiness(paths, lower);
+
+const gameplay = scoreGameplay(lower, paths);
+
+const retention = scoreRetention(lower);
+
+const monetization = scoreMonetization(lower);
+
+const androidReady = scoreAndroidReady(paths, lower);
+
+const antiPlaceholder = scoreAntiPlaceholder(lower);
+
+const isGame = detectGame(lower, paths);
+
+const isAndroid = detectAndroid(lower, paths);
+
+const weights = isGame
+
+? {
+
+architecture: 0.1,
+
+ui: 0.1,
+
+mobile: isAndroid ? 0.12 : 0.09,
+
+reliability: 0.12,
+
+productDepth: 0.12,
+
+completeness: 0.08,
+
+productionReadiness: 0.08,
+
+gameplay: 0.14,
+
+retention: 0.08,
+
+monetization: 0.03,
+
+androidReady: isAndroid ? 0.08 : 0.02,
+
+antiPlaceholder: 0.07,
+
 }
 
-export function buildNextActions(score: any, build: any) {
-  const actions: string[] = [];
+: {
 
-  if (!build.ok) {
-    actions.push("Fix all virtual build issues before adding new features.");
-  }
+architecture: 0.14,
 
-  if (score.architecture < 80) {
-    actions.push(
-      "Improve architecture: add clear base files, reusable sections, components or structured modules."
-    );
-  }
+ui: 0.14,
 
-  if (score.productDepth < 80) {
-    actions.push(
-      "Increase product depth: add real workflows, project states, user actions, analytics and settings."
-    );
-  }
+mobile: 0.14,
 
-  if (score.ui < 85) {
-    actions.push(
-      "Upgrade UI to premium level: stronger layout, hierarchy, cards, navigation, states and visual polish."
-    );
-  }
+reliability: 0.14,
 
-  if (score.mobile < 85) {
-    actions.push(
-      "Improve mobile-first responsiveness with better spacing, grids, overflow handling and breakpoints."
-    );
-  }
+productDepth: 0.12,
 
-  if (score.reliability < 85) {
-    actions.push("Improve reliability: add loading, empty, error and fallback states.");
-  }
+completeness: 0.12,
 
-  if (score.accessibility < 80) {
-    actions.push(
-      "Improve accessibility: semantic HTML, labels, aria attributes, focus states and disabled states."
-    );
-  }
+productionReadiness: 0.1,
 
-  if (score.seo < 75) {
-    actions.push(
-      "Improve SEO: title, meta description, OpenGraph, Twitter card, README, robots and sitemap."
-    );
-  }
+gameplay: 0.01,
 
-  if (score.monetization < 70) {
-    actions.push(
-      "Add conversion layer: CTA, pricing, plans, testimonials, FAQ or lead capture."
-    );
-  }
+retention: 0.04,
 
-  if (!actions.length) {
-    actions.push(
-      "Project is strong. Continue with real user testing, edge cases and deployment polish."
-    );
-  }
+monetization: 0.02,
 
-  return actions.slice(0, 8);
+androidReady: isAndroid ? 0.06 : 0.01,
+
+antiPlaceholder: 0.07,
+
+};
+
+const total = clampScore(
+
+Math.round(
+
+architecture * weights.architecture +
+
+ui * weights.ui +
+
+mobile * weights.mobile +
+
+reliability * weights.reliability +
+
+productDepth * weights.productDepth +
+
+completeness * weights.completeness +
+
+productionReadiness * weights.productionReadiness +
+
+gameplay * weights.gameplay +
+
+retention * weights.retention +
+
+monetization * weights.monetization +
+
+androidReady * weights.androidReady +
+
+antiPlaceholder * weights.antiPlaceholder
+
+)
+
+);
+
+return {
+
+total,
+
+architecture,
+
+ui,
+
+mobile,
+
+reliability,
+
+productDepth,
+
+completeness,
+
+productionReadiness,
+
+gameplay,
+
+retention,
+
+monetization,
+
+androidReady,
+
+antiPlaceholder,
+
+};
+
 }
+
+export function buildNextActions(score: ScoreBreakdown, build: any) {
+
+const actions: string[] = [];
+
+if (!build?.ok) {
+
+actions.push("Repair build errors and missing imports before adding features.");
+
+}
+
+if (score.reliability < 80) actions.push("Improve reliability, state handling, persistence, and error boundaries.");
+
+if (score.productDepth < 80) actions.push("Add real product depth, workflows, progression, and useful systems.");
+
+if (score.gameplay < 75) actions.push("Improve gameplay loop, scoring, controls, difficulty, and session feedback.");
+
+if (score.retention < 75) actions.push("Add missions, daily rewards, streaks, achievements, and unlock paths.");
+
+if (score.ui < 80) actions.push("Improve visual hierarchy, UI polish, spacing, and interaction feedback.");
+
+if (score.mobile < 85) actions.push("Improve mobile-first layout, tap targets, portrait mode, and responsive behavior.");
+
+if (score.androidReady < 75) actions.push("Add Android/Capacitor readiness files, manifest, icons, and Android build guide.");
+
+if (score.monetization < 60) actions.push("Add fair rewarded-ad hooks, cosmetic progression, and non-pay-to-win monetization architecture.");
+
+if (score.antiPlaceholder < 85) actions.push("Replace placeholder/demo-only code with real working systems.");
+
+if (!actions.length) {
+
+actions.push("Project is strong; focus on small polish, documentation, and release readiness.");
+
+}
+
+return actions;
+
+}
+
+function scoreArchitecture(paths: string[], lower: string) {
+
+let score = 15;
+
+if (paths.includes("/package.json")) score += 12;
+
+if (paths.includes("/vite.config.ts") || paths.includes("/vite.config.js")) score += 8;
+
+if (paths.includes("/src/main.tsx") || paths.includes("/src/main.jsx")) score += 8;
+
+if (paths.includes("/src/App.tsx") || paths.includes("/src/App.jsx")) score += 8;
+
+if (paths.some((path) => path.includes("/components/"))) score += 10;
+
+if (paths.some((path) => path.includes("/lib/"))) score += 8;
+
+if (paths.some((path) => path.includes("/hooks/"))) score += 8;
+
+if (paths.some((path) => path.includes("/data/"))) score += 6;
+
+if (paths.some((path) => path.includes("/systems/"))) score += 8;
+
+if (paths.some((path) => path.includes("/game/"))) score += 8;
+
+if (lower.includes("export function") || lower.includes("export const")) score += 5;
+
+if (lower.includes("type ") || lower.includes("interface ")) score += 5;
+
+return clampScore(score);
+
+}
+
+function scoreUi(lower: string, paths: string[]) {
+
+let score = 10;
+
+const uiTerms = ["classname", "button", "input", "card", "modal", "panel", "dashboard", "hud", "toast", "loading", "empty", "error", "disabled", "hover:", "active:", "transition", "rounded", "shadow", "gradient"];
+
+score += countHits(lower, uiTerms) * 4;
+
+if (paths.some((path) => path.toLowerCase().includes("components"))) score += 8;
+
+if (paths.some((path) => path.toLowerCase().includes("style.css"))) score += 6;
+
+if (lower.includes("tailwindcss")) score += 8;
+
+return clampScore(score);
+
+}
+
+function scoreMobile(lower: string) {
+
+let score = 10;
+
+const mobileTerms = ["viewport", "mobile", "portrait", "bottom", "safe-area", "touch", "tap", "responsive", "min-h-screen", "grid", "flex", "sm:", "md:", "lg:", "max-w", "overflow-auto", "fixed bottom", "bottom-0"];
+
+score += countHits(lower, mobileTerms) * 5;
+
+if (lower.includes("user-select")) score += 4;
+
+if (lower.includes("touch-action")) score += 6;
+
+if (lower.includes("env(safe-area-inset")) score += 8;
+
+return clampScore(score);
+
+}
+
+function scoreReliability(lower: string, paths: string[]) {
+
+let score = 15;
+
+const terms = ["try {", "catch", "fallback", "error", "loading", "disabled", "localstorage", "json.parse", "array.isarray", "typeof", "optional", "?.", "usememo", "usecallback"];
+
+score += countHits(lower, terms) * 4;
+
+if (paths.includes("/src/types.ts")) score += 6;
+
+if (lower.includes("return null")) score += 3;
+
+if (lower.includes("if (!")) score += 5;
+
+return clampScore(score);
+
+}
+
+function scoreProductDepth(lower: string, paths: string[]) {
+
+let score = 10;
+
+const terms = ["progression", "upgrade", "unlock", "mission", "challenge", "daily", "streak", "achievement", "settings", "analytics", "save", "state", "score", "reward", "economy", "inventory", "level", "experience", "xp", "onboarding"];
+
+score += countHits(lower, terms) * 4;
+
+if (paths.some((path) => path.includes("/data/"))) score += 8;
+
+if (paths.some((path) => path.includes("/systems/"))) score += 10;
+
+if (paths.some((path) => path.includes("/store/"))) score += 6;
+
+return clampScore(score);
+
+}
+
+function scoreCompleteness(paths: string[], lower: string) {
+
+let score = 0;
+
+const critical = ["/package.json", "/index.html", "/src/main.tsx", "/src/App.tsx"];
+
+score += critical.filter((path) => paths.includes(path)).length * 15;
+
+if (paths.includes("/README.md")) score += 10;
+
+if (paths.includes("/src/style.css") || paths.includes("/src/index.css")) score += 8;
+
+if (paths.includes("/vite.config.ts") || paths.includes("/vite.config.js")) score += 8;
+
+if (paths.includes("/tsconfig.json")) score += 5;
+
+if (lower.includes("export default function")) score += 5;
+
+return clampScore(score);
+
+}
+
+function scoreProductionReadiness(paths: string[], lower: string) {
+
+let score = 10;
+
+const terms = ["build", "deploy", "readme", "production", "checklist", "capacitor", "manifest", "offline", "localstorage", "performance", "accessibility", "error", "settings"];
+
+score += countHits(lower, terms) * 4;
+
+if (paths.includes("/README.md")) score += 8;
+
+if (paths.includes("/ANDROID_BUILD.md")) score += 10;
+
+if (paths.includes("/public/manifest.webmanifest")) score += 8;
+
+if (paths.some((path) => path.includes("/icons/"))) score += 5;
+
+return clampScore(score);
+
+}
+
+function scoreGameplay(lower: string, paths: string[]) {
+
+if (!detectGame(lower, paths)) return 0;
+
+let score = 15;
+
+const terms = ["game", "gameplay", "loop", "player", "enemy", "collision", "score", "combo", "level", "spawn", "difficulty", "run", "session", "upgrade", "power", "reward", "particle", "animation", "touch", "tap", "canvas", "requestanimationframe"];
+
+score += countHits(lower, terms) * 4;
+
+if (paths.some((path) => path.includes("/game/"))) score += 10;
+
+if (paths.some((path) => path.includes("/systems/"))) score += 8;
+
+if (paths.some((path) => path.includes("/data/"))) score += 6;
+
+return clampScore(score);
+
+}
+
+function scoreRetention(lower: string) {
+
+let score = 5;
+
+const terms = ["daily reward", "daily", "streak", "mission", "quest", "achievement", "unlock", "progression", "battle pass", "battlepass", "reward", "level", "xp", "challenge", "return", "retention"];
+
+score += countHits(lower, terms) * 6;
+
+return clampScore(score);
+
+}
+
+function scoreMonetization(lower: string) {
+
+let score = 5;
+
+const terms = ["rewarded ad", "rewarded", "ads", "admob", "monetization", "cosmetic", "battle pass", "battlepass", "purchase", "premium", "iap", "no pay-to-win", "not pay-to-win"];
+
+score += countHits(lower, terms) * 6;
+
+return clampScore(score);
+
+}
+
+function scoreAndroidReady(paths: string[], lower: string) {
+
+let score = 0;
+
+if (lower.includes("capacitor")) score += 20;
+
+if (paths.includes("/capacitor.config.ts") || paths.includes("/capacitor.config.json")) score += 20;
+
+if (paths.includes("/ANDROID_BUILD.md")) score += 20;
+
+if (paths.includes("/public/manifest.webmanifest")) score += 10;
+
+if (paths.some((path) => path.includes("/icons/"))) score += 8;
+
+if (lower.includes("android")) score += 8;
+
+if (lower.includes("portrait")) score += 6;
+
+if (lower.includes("viewport")) score += 4;
+
+if (lower.includes("safe-area")) score += 4;
+
+return clampScore(score);
+
+}
+
+function scoreAntiPlaceholder(lower: string) {
+
+let score = 100;
+
+const badTerms = ["todo: implement", "placeholder", "mock data only", "coming soon", "lorem ipsum", "dummy", "fake api", "not implemented", "under construction"];
+
+score -= countHits(lower, badTerms) * 12;
+
+if (lower.includes("generated app recovered safely")) score -= 25;
+
+if (lower.includes("ai returned invalid json")) score -= 25;
+
+return clampScore(score);
+
+}
+
+function countHits(text: string, terms: string[]) {
+
+return terms.reduce((sum, term) => (text.includes(term.toLowerCase()) ? sum + 1 : sum), 0);
+
+}
+
+function detectGame(lower: string, paths: string[]) {
+
+return lower.includes("game") || lower.includes("gameplay") || lower.includes("player") || paths.some((path) => path.includes("/game/"));
+
+}
+
+function detectAndroid(lower: string, paths: string[]) {
+
+return lower.includes("android") || lower.includes("capacitor") || paths.includes("/ANDROID_BUILD.md") || paths.includes("/capacitor.config.ts");
+
+}
+
+function normalizeFiles(files: VirtualFile[]) {
+
+return (files || []).filter((file) => file && file.path);
+
+}
+
+function clampScore(value: number) {
+
+return Math.max(0, Math.min(100, Math.round(value)));
+
+               }
