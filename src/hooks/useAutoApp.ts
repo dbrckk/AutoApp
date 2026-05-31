@@ -2,6 +2,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { VirtualFile } from "../types";
 
+import {
+
+clearActivityStore,
+
+createActivityEvent,
+
+readActivityEvents,
+
+saveActivityEvents,
+
+type ActivityEvent,
+
+} from "../lib/activityStore";
+
+import {
+
+clearFrontendSnapshot,
+
+isFreshSnapshot,
+
+readFrontendSnapshot,
+
+saveFrontendSnapshot,
+
+} from "../lib/sessionStore";
+
 import { exportFilesAsZip } from "../lib/exportZip";
 
 import {
@@ -46,6 +72,8 @@ getLatestGitHubCommit,
 
 getLiveDiagnostics,
 
+getProjectReport,
+
 improveAutonomousJob,
 
 inspectProject,
@@ -82,7 +110,7 @@ github repo: dbrckk/viral-android-game
 
 github branch: main`;
 
-const STORAGE_KEY = "autoapp.session.v2";
+const STORAGE_KEY = "autoapp.session.v3";
 
 type SessionState = {
 
@@ -114,27 +142,17 @@ const [jobLogs, setJobLogs] = useState<string[]>([]);
 
 const [githubHistory, setGithubHistory] = useState<any[]>([]);
 
+const [projectReport, setProjectReport] = useState<any>(null);
+
 const [githubRepo, setGithubRepoState] = useState(session.githubRepo || "");
 
-const [githubBranch, setGithubBranchState] = useState(
-
-session.githubBranch || "main"
-
-);
+const [githubBranch, setGithubBranchState] = useState(session.githubBranch || "main");
 
 const [autoRefreshJobs, setAutoRefreshJobs] = useState(true);
 
-const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>(() =>
+const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>(() => listSnapshots());
 
-listSnapshots()
-
-);
-
-const [fileActionMode, setFileActionMode] = useState<
-
-"create" | "rename" | null
-
->(null);
+const [fileActionMode, setFileActionMode] = useState<"create" | "rename" | null>(null);
 
 const [fileActionValue, setFileActionValue] = useState("");
 
@@ -147,6 +165,20 @@ const [status, setStatus] = useState("Ready.");
 const [result, setResult] = useState<any>(null);
 
 const [diagnostics, setDiagnostics] = useState<any>(null);
+
+const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>(() =>
+
+readActivityEvents()
+
+);
+
+const [notifications, setNotifications] = useState<ActivityEvent[]>([]);
+
+const [sessionSnapshotAvailable, setSessionSnapshotAvailable] = useState(() =>
+
+isFreshSnapshot(readFrontendSnapshot())
+
+);
 
 const actionIdRef = useRef(0);
 
@@ -200,43 +232,17 @@ runningJobs: jobs.filter((job) => job.status === "running").length,
 
 }, [files, jobs]);
 
-const setPrompt = useCallback((value: string) => {
+const setPrompt = useCallback((value: string) => setPromptState(value), []);
 
-setPromptState(value);
+const setGithubRepo = useCallback((value: string) => setGithubRepoState(value), []);
 
-}, []);
+const setGithubBranch = useCallback((value: string) => setGithubBranchState(value), []);
 
-const setGithubRepo = useCallback((value: string) => {
-
-setGithubRepoState(value);
-
-}, []);
-
-const setGithubBranch = useCallback((value: string) => {
-
-setGithubBranchState(value);
-
-}, []);
-
-const setActiveJobId = useCallback((value: string) => {
-
-setActiveJobIdState(value);
-
-}, []);
+const setActiveJobId = useCallback((value: string) => setActiveJobIdState(value), []);
 
 useEffect(() => {
 
-writeSession({
-
-prompt,
-
-githubRepo,
-
-githubBranch,
-
-activeJobId,
-
-});
+writeSession({ prompt, githubRepo, githubBranch, activeJobId });
 
 }, [prompt, githubRepo, githubBranch, activeJobId]);
 
@@ -270,6 +276,74 @@ return lines.join("\n");
 
 }
 
+function pushActivity(input: {
+
+type?: ActivityEvent["type"];
+
+title: string;
+
+message?: string;
+
+notify?: boolean;
+
+}) {
+
+const event = createActivityEvent(input);
+
+setActivityEvents((previous) => {
+
+const next = [event, ...previous].slice(0, 80);
+
+saveActivityEvents(next);
+
+return next;
+
+});
+
+if (input.notify !== false) {
+
+setNotifications((previous) => [event, ...previous].slice(0, 6));
+
+window.setTimeout(() => {
+
+setNotifications((previous) =>
+
+previous.filter((item) => item.id !== event.id)
+
+);
+
+}, 5200);
+
+}
+
+return event;
+
+}
+
+function dismissNotification(id: string) {
+
+setNotifications((previous) => previous.filter((item) => item.id !== id));
+
+}
+
+function clearActivityEvents() {
+
+clearActivityStore();
+
+setActivityEvents([]);
+
+pushActivity({
+
+type: "info",
+
+title: "Activity cleared",
+
+notify: false,
+
+});
+
+}
+
 async function runAction(label: string, action: () => Promise<any>) {
 
 const actionId = ++actionIdRef.current;
@@ -296,6 +370,16 @@ return value;
 
 const message = error?.message || "Action failed.";
 
+pushActivity({
+
+type: "error",
+
+title: label,
+
+message,
+
+});
+
 if (actionId === actionIdRef.current) {
 
 setStatus(message);
@@ -308,11 +392,7 @@ return null;
 
 } finally {
 
-if (actionId === actionIdRef.current) {
-
-setBusy(false);
-
-}
+if (actionId === actionIdRef.current) setBusy(false);
 
 }
 
@@ -374,6 +454,30 @@ return data.logs || [];
 
 );
 
+const refreshProjectReport = useCallback(
+
+async (jobId = activeJobId) => {
+
+if (!jobId) {
+
+setProjectReport(null);
+
+return null;
+
+}
+
+const report = await getProjectReport(jobId);
+
+setProjectReport(report);
+
+return report;
+
+},
+
+[activeJobId]
+
+);
+
 const refreshGitHubHistory = useCallback(async () => {
 
 if (!githubRepo.trim()) return [];
@@ -408,13 +512,7 @@ return;
 
 }
 
-const snapshot = saveSnapshot(
-
-`Snapshot ${new Date().toLocaleString()}`,
-
-files
-
-);
+const snapshot = saveSnapshot(`Snapshot ${new Date().toLocaleString()}`, files);
 
 refreshSnapshots();
 
@@ -490,17 +588,21 @@ prompt: buildPromptWithGitHubTarget(prompt),
 
 });
 
-if (!response.ok) {
-
-throw new Error(response.error || "Autonomous job failed.");
-
-}
+if (!response.ok) throw new Error(response.error || "Autonomous job failed.");
 
 setActiveJobId(response.jobId);
 
-await Promise.allSettled([refreshJobs(), refreshJobFiles(response.jobId)]);
+await Promise.allSettled([
 
-await refreshJobLogs(response.jobId).catch(() => []);
+refreshJobs(),
+
+refreshJobFiles(response.jobId),
+
+refreshJobLogs(response.jobId),
+
+refreshProjectReport(response.jobId),
+
+]);
 
 return response;
 
@@ -528,6 +630,8 @@ refreshJobFiles(activeJobId),
 
 refreshJobLogs(activeJobId),
 
+refreshProjectReport(activeJobId),
+
 refreshJobs(),
 
 ]);
@@ -552,7 +656,15 @@ await runAction("Resuming project...", async () => {
 
 const job = await resumeAutonomousJob(activeJobId);
 
-await Promise.allSettled([refreshJobs(), refreshJobLogs(activeJobId)]);
+await Promise.allSettled([
+
+refreshJobs(),
+
+refreshJobLogs(activeJobId),
+
+refreshProjectReport(activeJobId),
+
+]);
 
 return job;
 
@@ -584,6 +696,8 @@ refreshJobFiles(job.id),
 
 refreshJobLogs(job.id),
 
+refreshProjectReport(job.id),
+
 ]);
 
 return job;
@@ -598,11 +712,13 @@ setActiveJobId(jobId);
 
 await runAction("Opening project...", async () => {
 
-const [filesResult, logsResult] = await Promise.allSettled([
+const [filesResult, logsResult, reportResult] = await Promise.allSettled([
 
 refreshJobFiles(jobId),
 
 refreshJobLogs(jobId),
+
+refreshProjectReport(jobId),
 
 ]);
 
@@ -610,11 +726,11 @@ return {
 
 ok: true,
 
-files:
-
-filesResult.status === "fulfilled" ? filesResult.value?.files || [] : [],
+files: filesResult.status === "fulfilled" ? filesResult.value?.files || [] : [],
 
 logs: logsResult.status === "fulfilled" ? logsResult.value : [],
+
+report: reportResult.status === "fulfilled" ? reportResult.value : null,
 
 };
 
@@ -676,15 +792,7 @@ await runAction("Exporting ZIP...", async () => {
 
 await exportFilesAsZip(files, "autoapp-project");
 
-return {
-
-ok: true,
-
-exported: files.length,
-
-format: "zip",
-
-};
+return { ok: true, exported: files.length, format: "zip" };
 
 });
 
@@ -702,13 +810,7 @@ return;
 
 await runAction("Testing GitHub access...", async () =>
 
-testGitHubAccess({
-
-repo: githubRepo.trim(),
-
-branch: githubBranch.trim() || "main",
-
-})
+testGitHubAccess({ repo: githubRepo.trim(), branch: githubBranch.trim() || "main" })
 
 );
 
@@ -754,13 +856,7 @@ return;
 
 await runAction("Checking latest GitHub commit...", async () =>
 
-getLatestGitHubCommit({
-
-repo: githubRepo.trim(),
-
-branch: githubBranch.trim() || "main",
-
-})
+getLatestGitHubCommit({ repo: githubRepo.trim(), branch: githubBranch.trim() || "main" })
 
 );
 
@@ -896,6 +992,46 @@ return template || { ok: false, error: "Template returned null." };
 
 }
 
+function restoreFrontendSnapshot() {
+
+const snapshot = readFrontendSnapshot();
+
+if (!isFreshSnapshot(snapshot)) {
+
+setSessionSnapshotAvailable(false);
+
+setStatus("No fresh frontend snapshot available.");
+
+return;
+
+}
+
+setActiveJobId(snapshot.activeJobId || "");
+
+setFiles(snapshot.files || []);
+
+setSelectedPath(snapshot.selectedPath || snapshot.files?.[0]?.path || "");
+
+setProjectReport(snapshot.projectReport || null);
+
+setJobLogs(snapshot.jobLogs || []);
+
+setSessionSnapshotAvailable(false);
+
+setStatus("Frontend session restored.");
+
+}
+
+function dismissFrontendSnapshot() {
+
+clearFrontendSnapshot();
+
+setSessionSnapshotAvailable(false);
+
+setStatus("Frontend snapshot dismissed.");
+
+}
+
 function handleCreateFile() {
 
 setFileActionValue("/src/new-file.ts");
@@ -1000,13 +1136,11 @@ return;
 
 }
 
-const nextFiles = [
+const nextFiles = [...files, { path: normalized, content: "" }].sort((a, b) =>
 
-...files,
+a.path.localeCompare(b.path)
 
-{ path: normalized, content: "" },
-
-].sort((a, b) => a.path.localeCompare(b.path));
+);
 
 setFiles(nextFiles);
 
@@ -1038,9 +1172,7 @@ files.some(
 
 (file) =>
 
-file.path !== selectedFile.path &&
-
-normalizePath(file.path) === normalized
+file.path !== selectedFile.path && normalizePath(file.path) === normalized
 
 )
 
@@ -1076,9 +1208,35 @@ handleCancelFileAction();
 
 useEffect(() => {
 
+saveFrontendSnapshot({
+
+activeJobId,
+
+selectedPath,
+
+files,
+
+projectReport,
+
+jobLogs,
+
+});
+
+}, [activeJobId, selectedPath, files, projectReport, jobLogs]);
+
+useEffect(() => {
+
 refreshJobs().catch(() => undefined);
 
 }, [refreshJobs]);
+
+useEffect(() => {
+
+if (!activeJobId) return;
+
+refreshProjectReport(activeJobId).catch(() => undefined);
+
+}, [activeJobId, refreshProjectReport]);
 
 useEffect(() => {
 
@@ -1094,13 +1252,15 @@ refreshJobFiles(activeJobId).catch(() => undefined);
 
 refreshJobLogs(activeJobId).catch(() => undefined);
 
+refreshProjectReport(activeJobId).catch(() => undefined);
+
 }
 
 }, document.visibilityState === "visible" ? 12_000 : 30_000);
 
 return () => window.clearInterval(timer);
 
-}, [autoRefreshJobs, activeJobId, refreshJobs, refreshJobFiles, refreshJobLogs]);
+}, [autoRefreshJobs, activeJobId, refreshJobs, refreshJobFiles, refreshJobLogs, refreshProjectReport]);
 
 return {
 
@@ -1137,6 +1297,10 @@ refreshJobLogs,
 handleOpenJob,
 
 handleImproveJob,
+
+projectReport,
+
+refreshProjectReport,
 
 githubRepo,
 
@@ -1254,13 +1418,7 @@ map.delete(path);
 
 } else {
 
-map.set(path, {
-
-path,
-
-content: file.content,
-
-});
+map.set(path, { path, content: file.content });
 
 }
 
@@ -1286,17 +1444,7 @@ return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
 
 } catch {
 
-return {
-
-prompt: "",
-
-githubRepo: "",
-
-githubBranch: "main",
-
-activeJobId: "",
-
-};
+return { prompt: "", githubRepo: "", githubBranch: "main", activeJobId: "" };
 
 }
 
