@@ -1,32 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { VirtualFile } from "../types";
-
-import {
-
-clearActivityStore,
-
-createActivityEvent,
-
-readActivityEvents,
-
-saveActivityEvents,
-
-type ActivityEvent,
-
-} from "../lib/activityStore";
-
-import {
-
-clearFrontendSnapshot,
-
-isFreshSnapshot,
-
-readFrontendSnapshot,
-
-saveFrontendSnapshot,
-
-} from "../lib/sessionStore";
 
 import { exportFilesAsZip } from "../lib/exportZip";
 
@@ -60,19 +34,13 @@ generateProject,
 
 getAutonomousJobFiles,
 
-getAutonomousJobLogs,
-
 getDiagnostics,
 
 getGitHubFileStatus,
 
-getGitHubHistory,
-
 getLatestGitHubCommit,
 
 getLiveDiagnostics,
-
-getProjectReport,
 
 improveAutonomousJob,
 
@@ -102,57 +70,39 @@ type AutonomousJob,
 
 } from "../lib/api";
 
-const SAMPLE_PROMPT = `Create a production-ready Android-first viral mobile game with one-touch gameplay, progression, upgrades, particles, animations, local save, missions, daily rewards, monetization hooks, premium UI and Capacitor Android export.
+const SAMPLE_PROMPT = `Create a complete premium mobile-first SaaS dashboard for creators.
 
-auto improve forever: true
-
-github repo: dbrckk/viral-android-game
-
-github branch: main`;
-
-const STORAGE_KEY = "autoapp.session.v3";
-
-type SessionState = {
-
-prompt: string;
-
-githubRepo: string;
-
-githubBranch: string;
-
-activeJobId: string;
-
-};
+It must include onboarding, dashboard, analytics, settings, export actions, beautiful UI, empty/loading/error states.`;
 
 export function useAutoApp() {
 
-const session = readSession();
-
-const [prompt, setPromptState] = useState(session.prompt || SAMPLE_PROMPT);
+const [prompt, setPrompt] = useState(SAMPLE_PROMPT);
 
 const [files, setFiles] = useState<VirtualFile[]>([]);
 
 const [selectedPath, setSelectedPath] = useState("");
 
-const [activeJobId, setActiveJobIdState] = useState(session.activeJobId || "");
+const [activeJobId, setActiveJobId] = useState("");
 
 const [jobs, setJobs] = useState<AutonomousJob[]>([]);
 
-const [jobLogs, setJobLogs] = useState<string[]>([]);
+const [githubRepo, setGithubRepo] = useState("");
 
-const [githubHistory, setGithubHistory] = useState<any[]>([]);
-
-const [projectReport, setProjectReport] = useState<any>(null);
-
-const [githubRepo, setGithubRepoState] = useState(session.githubRepo || "");
-
-const [githubBranch, setGithubBranchState] = useState(session.githubBranch || "main");
+const [githubBranch, setGithubBranch] = useState("main");
 
 const [autoRefreshJobs, setAutoRefreshJobs] = useState(true);
 
-const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>(() => listSnapshots());
+const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>(() =>
 
-const [fileActionMode, setFileActionMode] = useState<"create" | "rename" | null>(null);
+listSnapshots()
+
+);
+
+const [fileActionMode, setFileActionMode] = useState<
+
+"create" | "rename" | null
+
+>(null);
 
 const [fileActionValue, setFileActionValue] = useState("");
 
@@ -166,22 +116,6 @@ const [result, setResult] = useState<any>(null);
 
 const [diagnostics, setDiagnostics] = useState<any>(null);
 
-const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>(() =>
-
-readActivityEvents()
-
-);
-
-const [notifications, setNotifications] = useState<ActivityEvent[]>([]);
-
-const [sessionSnapshotAvailable, setSessionSnapshotAvailable] = useState(() =>
-
-isFreshSnapshot(readFrontendSnapshot())
-
-);
-
-const actionIdRef = useRef(0);
-
 const selectedFile = useMemo(
 
 () => files.find((file) => file.path === selectedPath) || files[0] || null,
@@ -190,163 +124,29 @@ const selectedFile = useMemo(
 
 );
 
-const activeJob = useMemo(
-
-() => jobs.find((job) => job.id === activeJobId) || null,
-
-[jobs, activeJobId]
-
-);
-
-const projectStats = useMemo(() => {
-
-const lines = files.reduce(
-
-(sum, file) => sum + String(file.content || "").split("\n").length,
-
-0
-
-);
-
-const chars = files.reduce(
-
-(sum, file) => sum + String(file.content || "").length,
-
-0
-
-);
-
-return {
-
-files: files.length,
-
-lines,
-
-chars,
-
-jobs: jobs.length,
-
-runningJobs: jobs.filter((job) => job.status === "running").length,
-
-};
-
-}, [files, jobs]);
-
-const setPrompt = useCallback((value: string) => setPromptState(value), []);
-
-const setGithubRepo = useCallback((value: string) => setGithubRepoState(value), []);
-
-const setGithubBranch = useCallback((value: string) => setGithubBranchState(value), []);
-
-const setActiveJobId = useCallback((value: string) => setActiveJobIdState(value), []);
-
-useEffect(() => {
-
-writeSession({ prompt, githubRepo, githubBranch, activeJobId });
-
-}, [prompt, githubRepo, githubBranch, activeJobId]);
-
 function buildPromptWithGitHubTarget(rawPrompt: string) {
 
 const repo = githubRepo.trim();
 
 const branch = githubBranch.trim() || "main";
 
-const lines = [rawPrompt.trim()];
+if (!repo) return rawPrompt;
 
-if (!/auto\s*improve\s*forever\s*:\s*true/i.test(rawPrompt)) {
+return [
 
-lines.push("", "auto improve forever: true");
+rawPrompt.trim(),
 
-}
+"",
 
-if (repo && !/github\s*repo\s*:/i.test(rawPrompt)) {
+`github repo: ${repo}`,
 
-lines.push(`github repo: ${repo}`);
+`github branch: ${branch}`,
 
-}
-
-if (repo && !/github\s*branch\s*:/i.test(rawPrompt)) {
-
-lines.push(`github branch: ${branch}`);
-
-}
-
-return lines.join("\n");
-
-}
-
-function pushActivity(input: {
-
-type?: ActivityEvent["type"];
-
-title: string;
-
-message?: string;
-
-notify?: boolean;
-
-}) {
-
-const event = createActivityEvent(input);
-
-setActivityEvents((previous) => {
-
-const next = [event, ...previous].slice(0, 80);
-
-saveActivityEvents(next);
-
-return next;
-
-});
-
-if (input.notify !== false) {
-
-setNotifications((previous) => [event, ...previous].slice(0, 6));
-
-window.setTimeout(() => {
-
-setNotifications((previous) =>
-
-previous.filter((item) => item.id !== event.id)
-
-);
-
-}, 5200);
-
-}
-
-return event;
-
-}
-
-function dismissNotification(id: string) {
-
-setNotifications((previous) => previous.filter((item) => item.id !== id));
-
-}
-
-function clearActivityEvents() {
-
-clearActivityStore();
-
-setActivityEvents([]);
-
-pushActivity({
-
-type: "info",
-
-title: "Activity cleared",
-
-notify: false,
-
-});
+].join("\n");
 
 }
 
 async function runAction(label: string, action: () => Promise<any>) {
-
-const actionId = ++actionIdRef.current;
 
 setBusy(true);
 
@@ -356,13 +156,9 @@ try {
 
 const value = await action();
 
-if (actionId === actionIdRef.current) {
-
 setResult(value);
 
 setStatus("Done.");
-
-}
 
 return value;
 
@@ -370,35 +166,21 @@ return value;
 
 const message = error?.message || "Action failed.";
 
-pushActivity({
-
-type: "error",
-
-title: label,
-
-message,
-
-});
-
-if (actionId === actionIdRef.current) {
-
 setStatus(message);
 
 setResult({ ok: false, error: message });
-
-}
 
 return null;
 
 } finally {
 
-if (actionId === actionIdRef.current) setBusy(false);
+setBusy(false);
 
 }
 
 }
 
-const refreshJobs = useCallback(async () => {
+async function refreshJobs() {
 
 const data = await listAutonomousJobs();
 
@@ -406,11 +188,9 @@ setJobs(data || []);
 
 return data;
 
-}, []);
+}
 
-const refreshJobFiles = useCallback(
-
-async (jobId = activeJobId) => {
+async function refreshJobFiles(jobId = activeJobId) {
 
 if (!jobId) return null;
 
@@ -420,81 +200,11 @@ const nextFiles = data.files || [];
 
 setFiles(nextFiles);
 
-setSelectedPath((current) => {
-
-if (nextFiles.some((file) => file.path === current)) return current;
-
-return nextFiles[0]?.path || "";
-
-});
+setSelectedPath(nextFiles[0]?.path || "");
 
 return data;
 
-},
-
-[activeJobId]
-
-);
-
-const refreshJobLogs = useCallback(
-
-async (jobId = activeJobId) => {
-
-if (!jobId) return [];
-
-const data = await getAutonomousJobLogs(jobId);
-
-setJobLogs(data.logs || []);
-
-return data.logs || [];
-
-},
-
-[activeJobId]
-
-);
-
-const refreshProjectReport = useCallback(
-
-async (jobId = activeJobId) => {
-
-if (!jobId) {
-
-setProjectReport(null);
-
-return null;
-
 }
-
-const report = await getProjectReport(jobId);
-
-setProjectReport(report);
-
-return report;
-
-},
-
-[activeJobId]
-
-);
-
-const refreshGitHubHistory = useCallback(async () => {
-
-if (!githubRepo.trim()) return [];
-
-const data = await getGitHubHistory({
-
-repo: githubRepo.trim(),
-
-branch: githubBranch.trim() || "main",
-
-});
-
-setGithubHistory(data.commits || []);
-
-return data.commits || [];
-
-}, [githubRepo, githubBranch]);
 
 function refreshSnapshots() {
 
@@ -512,11 +222,23 @@ return;
 
 }
 
-const snapshot = saveSnapshot(`Snapshot ${new Date().toLocaleString()}`, files);
+const snapshot = saveSnapshot(
+
+`Snapshot ${new Date().toLocaleString()}`,
+
+files
+
+);
 
 refreshSnapshots();
 
-setResult({ ok: true, snapshot });
+setResult({
+
+ok: true,
+
+snapshot,
+
+});
 
 setStatus("Snapshot saved.");
 
@@ -538,7 +260,13 @@ setFiles(snapshot.files);
 
 setSelectedPath(snapshot.files[0]?.path || "");
 
-setResult({ ok: true, restored: snapshot });
+setResult({
+
+ok: true,
+
+restored: snapshot,
+
+});
 
 setStatus(`Snapshot restored: ${snapshot.name}`);
 
@@ -580,29 +308,33 @@ return response;
 
 async function handleStartAutonomous() {
 
-await runAction("Starting autonomous project...", async () => {
+await runAction("Starting real autonomous job...", async () => {
+
+const finalPrompt = [
+
+buildPromptWithGitHubTarget(prompt),
+
+"",
+
+"auto improve forever: true",
+
+].join("\n");
 
 const response = await startRealAutonomousJob({
 
-prompt: buildPromptWithGitHubTarget(prompt),
+prompt: finalPrompt,
 
 });
 
-if (!response.ok) throw new Error(response.error || "Autonomous job failed.");
+if (!response.ok) {
+
+throw new Error(response.error || "Autonomous job failed.");
+
+}
 
 setActiveJobId(response.jobId);
 
-await Promise.allSettled([
-
-refreshJobs(),
-
-refreshJobFiles(response.jobId),
-
-refreshJobLogs(response.jobId),
-
-refreshProjectReport(response.jobId),
-
-]);
+await refreshJobs();
 
 return response;
 
@@ -614,57 +346,19 @@ async function handleStepJob() {
 
 if (!activeJobId) {
 
-setStatus("No active project selected.");
+setStatus("No active job selected.");
 
 return;
 
 }
 
-await runAction("Running one autonomous step...", async () => {
+await runAction("Running autonomous step...", async () => {
 
 const job = await runAutonomousJobStep(activeJobId);
 
-await Promise.allSettled([
+await refreshJobFiles(activeJobId);
 
-refreshJobFiles(activeJobId),
-
-refreshJobLogs(activeJobId),
-
-refreshProjectReport(activeJobId),
-
-refreshJobs(),
-
-]);
-
-return job;
-
-});
-
-}
-
-async function handleResumeJob() {
-
-if (!activeJobId) {
-
-setStatus("No active project selected.");
-
-return;
-
-}
-
-await runAction("Resuming project...", async () => {
-
-const job = await resumeAutonomousJob(activeJobId);
-
-await Promise.allSettled([
-
-refreshJobs(),
-
-refreshJobLogs(activeJobId),
-
-refreshProjectReport(activeJobId),
-
-]);
+await refreshJobs();
 
 return job;
 
@@ -676,7 +370,7 @@ async function handleImproveJob(jobId = activeJobId) {
 
 if (!jobId) {
 
-setStatus("No project selected.");
+setStatus("No job selected.");
 
 return;
 
@@ -688,17 +382,9 @@ const job = await improveAutonomousJob(jobId);
 
 setActiveJobId(job.id);
 
-await Promise.allSettled([
+await refreshJobs();
 
-refreshJobs(),
-
-refreshJobFiles(job.id),
-
-refreshJobLogs(job.id),
-
-refreshProjectReport(job.id),
-
-]);
+await refreshJobFiles(job.id);
 
 return job;
 
@@ -706,33 +392,23 @@ return job;
 
 }
 
-async function handleOpenJob(jobId: string) {
+async function handleResumeJob() {
 
-setActiveJobId(jobId);
+if (!activeJobId) {
 
-await runAction("Opening project...", async () => {
+setStatus("No active job selected.");
 
-const [filesResult, logsResult, reportResult] = await Promise.allSettled([
+return;
 
-refreshJobFiles(jobId),
+}
 
-refreshJobLogs(jobId),
+await runAction("Resuming job...", async () => {
 
-refreshProjectReport(jobId),
+const job = await resumeAutonomousJob(activeJobId);
 
-]);
+await refreshJobs();
 
-return {
-
-ok: true,
-
-files: filesResult.status === "fulfilled" ? filesResult.value?.files || [] : [],
-
-logs: logsResult.status === "fulfilled" ? logsResult.value : [],
-
-report: reportResult.status === "fulfilled" ? reportResult.value : null,
-
-};
+return job;
 
 });
 
@@ -756,9 +432,9 @@ return;
 
 }
 
-await runAction("Exporting current files to GitHub...", async () => {
+await runAction("Exporting current files to GitHub...", async () =>
 
-const response = await exportToGitHub({
+exportToGitHub({
 
 repo: githubRepo.trim(),
 
@@ -768,13 +444,9 @@ commitMessage: "AutoApp manual export",
 
 files,
 
-});
+})
 
-await refreshGitHubHistory().catch(() => []);
-
-return response;
-
-});
+);
 
 }
 
@@ -792,7 +464,15 @@ await runAction("Exporting ZIP...", async () => {
 
 await exportFilesAsZip(files, "autoapp-project");
 
-return { ok: true, exported: files.length, format: "zip" };
+return {
+
+ok: true,
+
+exported: files.length,
+
+format: "zip",
+
+};
 
 });
 
@@ -810,7 +490,13 @@ return;
 
 await runAction("Testing GitHub access...", async () =>
 
-testGitHubAccess({ repo: githubRepo.trim(), branch: githubBranch.trim() || "main" })
+testGitHubAccess({
+
+repo: githubRepo.trim(),
+
+branch: githubBranch.trim() || "main",
+
+})
 
 );
 
@@ -826,21 +512,17 @@ return;
 
 }
 
-await runAction("Writing real test file to GitHub...", async () => {
+await runAction("Writing real test file to GitHub...", async () =>
 
-const response = await testGitHubExport({
+testGitHubExport({
 
 repo: githubRepo.trim(),
 
 branch: githubBranch.trim() || "main",
 
-});
+})
 
-await refreshGitHubHistory().catch(() => []);
-
-return response;
-
-});
+);
 
 }
 
@@ -856,7 +538,13 @@ return;
 
 await runAction("Checking latest GitHub commit...", async () =>
 
-getLatestGitHubCommit({ repo: githubRepo.trim(), branch: githubBranch.trim() || "main" })
+getLatestGitHubCommit({
+
+repo: githubRepo.trim(),
+
+branch: githubBranch.trim() || "main",
+
+})
 
 );
 
@@ -960,7 +648,11 @@ return extra;
 
 }
 
-if (action === "Publish Report") return createPublishReport(files);
+if (action === "Publish Report") {
+
+return createPublishReport(files);
+
+}
 
 return null;
 
@@ -980,55 +672,15 @@ await runAction("Applying template...", async () => {
 
 const template = await applyTemplate(id);
 
-const templateFiles = Array.isArray(template?.files) ? template.files : [];
+const templateFiles = template.files || [];
 
 setFiles(templateFiles);
 
 setSelectedPath(templateFiles[0]?.path || "");
 
-return template || { ok: false, error: "Template returned null." };
+return template;
 
 });
-
-}
-
-function restoreFrontendSnapshot() {
-
-const snapshot = readFrontendSnapshot();
-
-if (!isFreshSnapshot(snapshot)) {
-
-setSessionSnapshotAvailable(false);
-
-setStatus("No fresh frontend snapshot available.");
-
-return;
-
-}
-
-setActiveJobId(snapshot.activeJobId || "");
-
-setFiles(snapshot.files || []);
-
-setSelectedPath(snapshot.selectedPath || snapshot.files?.[0]?.path || "");
-
-setProjectReport(snapshot.projectReport || null);
-
-setJobLogs(snapshot.jobLogs || []);
-
-setSessionSnapshotAvailable(false);
-
-setStatus("Frontend session restored.");
-
-}
-
-function dismissFrontendSnapshot() {
-
-clearFrontendSnapshot();
-
-setSessionSnapshotAvailable(false);
-
-setStatus("Frontend snapshot dismissed.");
 
 }
 
@@ -1136,11 +788,19 @@ return;
 
 }
 
-const nextFiles = [...files, { path: normalized, content: "" }].sort((a, b) =>
+const nextFiles = [
 
-a.path.localeCompare(b.path)
+...files,
 
-);
+{
+
+path: normalized,
+
+content: "",
+
+},
+
+].sort((a, b) => a.path.localeCompare(b.path));
 
 setFiles(nextFiles);
 
@@ -1172,7 +832,9 @@ files.some(
 
 (file) =>
 
-file.path !== selectedFile.path && normalizePath(file.path) === normalized
+file.path !== selectedFile.path &&
+
+normalizePath(file.path) === normalized
 
 )
 
@@ -1188,7 +850,17 @@ const nextFiles = files
 
 .map((file) =>
 
-file.path === selectedFile.path ? { ...file, path: normalized } : file
+file.path === selectedFile.path
+
+? {
+
+...file,
+
+path: normalized,
+
+}
+
+: file
 
 )
 
@@ -1208,35 +880,9 @@ handleCancelFileAction();
 
 useEffect(() => {
 
-saveFrontendSnapshot({
-
-activeJobId,
-
-selectedPath,
-
-files,
-
-projectReport,
-
-jobLogs,
-
-});
-
-}, [activeJobId, selectedPath, files, projectReport, jobLogs]);
-
-useEffect(() => {
-
 refreshJobs().catch(() => undefined);
 
-}, [refreshJobs]);
-
-useEffect(() => {
-
-if (!activeJobId) return;
-
-refreshProjectReport(activeJobId).catch(() => undefined);
-
-}, [activeJobId, refreshProjectReport]);
+}, []);
 
 useEffect(() => {
 
@@ -1250,17 +896,13 @@ if (activeJobId) {
 
 refreshJobFiles(activeJobId).catch(() => undefined);
 
-refreshJobLogs(activeJobId).catch(() => undefined);
-
-refreshProjectReport(activeJobId).catch(() => undefined);
-
 }
 
-}, document.visibilityState === "visible" ? 12_000 : 30_000);
+}, 15_000);
 
 return () => window.clearInterval(timer);
 
-}, [autoRefreshJobs, activeJobId, refreshJobs, refreshJobFiles, refreshJobLogs, refreshProjectReport]);
+}, [autoRefreshJobs, activeJobId]);
 
 return {
 
@@ -1280,27 +922,13 @@ selectedFile,
 
 activeJobId,
 
-activeJob,
-
 setActiveJobId,
 
 jobs,
 
-jobLogs,
-
 refreshJobs,
 
 refreshJobFiles,
-
-refreshJobLogs,
-
-handleOpenJob,
-
-handleImproveJob,
-
-projectReport,
-
-refreshProjectReport,
 
 githubRepo,
 
@@ -1309,10 +937,6 @@ setGithubRepo,
 githubBranch,
 
 setGithubBranch,
-
-githubHistory,
-
-refreshGitHubHistory,
 
 autoRefreshJobs,
 
@@ -1350,13 +974,13 @@ result,
 
 diagnostics,
 
-projectStats,
-
 handleGenerate,
 
 handleStartAutonomous,
 
 handleStepJob,
+
+handleImproveJob,
 
 handleResumeJob,
 
@@ -1418,7 +1042,13 @@ map.delete(path);
 
 } else {
 
-map.set(path, { path, content: file.content });
+map.set(path, {
+
+path,
+
+content: file.content,
+
+});
 
 }
 
@@ -1433,34 +1063,6 @@ function normalizePath(path: string) {
 const value = String(path || "").trim();
 
 return value.startsWith("/") ? value : `/${value}`;
-
-}
-
-function readSession(): SessionState {
-
-try {
-
-return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-
-} catch {
-
-return { prompt: "", githubRepo: "", githubBranch: "main", activeJobId: "" };
-
-}
-
-}
-
-function writeSession(state: SessionState) {
-
-try {
-
-localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-} catch {
-
-// Ignore private mode storage failures.
-
-}
 
 }
 
