@@ -596,4 +596,4 @@ return request<{ ok: boolean; repo: string; branch: string; path: string; sha: s
 
 );
 
-  }
+}
