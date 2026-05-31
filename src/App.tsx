@@ -2,6 +2,14 @@ import { Suspense, lazy, useMemo, useState } from "react";
 
 import { useAutoApp } from "./hooks/useAutoApp";
 
+import { ErrorBoundary } from "./components/ErrorBoundary";
+
+import { RuntimeBanner } from "./components/RuntimeBanner";
+
+import { NotificationCenter } from "./components/NotificationCenter";
+
+import { FloatingCommandBar } from "./components/FloatingCommandBar";
+
 import { TopStatusBar } from "./components/TopStatusBar";
 
 import { MobileTabBar, type AppTab } from "./components/MobileTabBar";
@@ -14,11 +22,29 @@ import { PromptPanel } from "./components/PromptPanel";
 
 import { GitHubPanel } from "./components/GitHubPanel";
 
-import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
-
 import { ProjectToolsPanel } from "./components/ProjectToolsPanel";
 
+import { QuickActionsPanel } from "./components/QuickActionsPanel";
+
 import { ProjectsPanel } from "./components/ProjectsPanel";
+
+import { ProjectMemoryPanel } from "./components/ProjectMemoryPanel";
+
+import { SystemStatusPanel } from "./components/SystemStatusPanel";
+
+import { AutonomousTimeline } from "./components/AutonomousTimeline";
+
+import { ProjectScoreRadar } from "./components/ProjectScoreRadar";
+
+import { SchemaHealthPanel } from "./components/SchemaHealthPanel";
+
+import { SessionRecoveryPanel } from "./components/SessionRecoveryPanel";
+
+import { ActivityPanel } from "./components/ActivityPanel";
+
+import { BuildReadinessPanel } from "./components/BuildReadinessPanel";
+
+import { ReleaseChecklistPanel } from "./components/ReleaseChecklistPanel";
 
 import { JobLogsPanel } from "./components/JobLogsPanel";
 
@@ -62,15 +88,29 @@ default: mod.DiagnosticsPanel,
 
 export default function App() {
 
+return (
+
+<ErrorBoundary>
+
+<AutoAppShell />
+
+</ErrorBoundary>
+
+);
+
+}
+
+function AutoAppShell() {
+
 const app = useAutoApp();
 
 const [activeTab, setActiveTab] = useState<AppTab>("home");
 
 const resultPayload = useMemo(
 
-() => app.result || app.diagnostics || {},
+() => app.result || app.diagnostics || app.projectReport || {},
 
-[app.result, app.diagnostics]
+[app.result, app.diagnostics, app.projectReport]
 
 );
 
@@ -80,17 +120,35 @@ return (
 
 <TopStatusBar app={app} />
 
-<section className="mx-auto min-h-screen max-w-7xl px-3 pb-28 pt-24 md:px-6 lg:px-8">
+<RuntimeBanner app={app} />
+
+<NotificationCenter app={app} />
+
+<section className="mx-auto min-h-screen max-w-7xl px-3 pb-32 pt-24 md:px-6 lg:px-8">
 
 <div className="hidden gap-5 lg:grid lg:grid-cols-[420px_1fr]">
 
 <aside className="space-y-5">
 
+<SessionRecoveryPanel app={app} />
+
 <PromptPanel app={app} />
+
+<QuickActionsPanel app={app} />
 
 <GitHubPanel app={app} />
 
 <ProjectToolsPanel app={app} />
+
+<SystemStatusPanel app={app} />
+
+<SchemaHealthPanel app={app} />
+
+<ActivityPanel app={app} />
+
+<ReleaseChecklistPanel app={app} />
+
+<ReleaseChecklistPanel app={app} />
 
 <Suspense fallback={<PanelFallback title="Snapshots" />}>
 
@@ -104,7 +162,17 @@ return (
 
 <DashboardScreen app={app} />
 
+<ProjectScoreRadar app={app} />
+
+<BuildReadinessPanel app={app} />
+
+<BuildReadinessPanel app={app} />
+
 <ProjectsPanel app={app} />
+
+<ProjectMemoryPanel app={app} />
+
+<AutonomousTimeline app={app} />
 
 <FileExplorer app={app} />
 
@@ -126,7 +194,15 @@ return (
 
 <MobileScreen active={activeTab === "home"}>
 
+<SessionRecoveryPanel app={app} />
+
 <DashboardScreen app={app} />
+
+<QuickActionsPanel app={app} />
+
+<SystemStatusPanel app={app} />
+
+<ProjectScoreRadar app={app} />
 
 <PromptPanel app={app} />
 
@@ -135,6 +211,10 @@ return (
 <MobileScreen active={activeTab === "projects"}>
 
 <ProjectsPanel app={app} />
+
+<ProjectMemoryPanel app={app} />
+
+<AutonomousTimeline app={app} />
 
 <JobLogsPanel app={app} />
 
@@ -162,6 +242,10 @@ return (
 
 <ProjectToolsPanel app={app} />
 
+<SchemaHealthPanel app={app} />
+
+<ActivityPanel app={app} />
+
 <Suspense fallback={<PanelFallback title="Diagnostics" />}>
 
 <DiagnosticsLazyPanel app={app} />
@@ -181,6 +265,8 @@ return (
 </div>
 
 </section>
+
+<FloatingCommandBar app={app} />
 
 <MobileTabBar activeTab={activeTab} onChange={setActiveTab} />
 
