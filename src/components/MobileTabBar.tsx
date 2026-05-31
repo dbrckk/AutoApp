@@ -12,7 +12,7 @@ icon: string;
 
 { id: "home", label: "Home", icon: "●" },
 
-{ id: "projects", label: "Projects", icon: "◆" },
+{ id: "projects", label: "Monitor", icon: "◆" },
 
 { id: "editor", label: "Editor", icon: "▣" },
 
