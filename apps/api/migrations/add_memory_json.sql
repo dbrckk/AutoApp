@@ -1,0 +1,1 @@
+ALTER TABLE jobs ADD COLUMN memory_json TEXT DEFAULT '{}';
