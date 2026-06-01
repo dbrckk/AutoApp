@@ -1,75 +1,257 @@
 @import "tailwindcss";
 
 * {
-  box-sizing: border-box;
+
+box-sizing: border-box;
+
 }
 
 html {
-  scroll-behavior: smooth;
-  background: #050505;
+
+scroll-behavior: smooth;
+
+background: #050505;
+
 }
 
 body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #050505;
-  color: #ffffff;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+
+margin: 0;
+
+min-width: 320px;
+
+min-height: 100vh;
+
+background: #050505;
+
+color: #ffffff;
+
+font-family:
+
+Inter,
+
+ui-sans-serif,
+
+system-ui,
+
+-apple-system,
+
+BlinkMacSystemFont,
+
+"Segoe UI",
+
+sans-serif;
+
+text-rendering: optimizeLegibility;
+
+-webkit-font-smoothing: antialiased;
+
+-moz-osx-font-smoothing: grayscale;
+
 }
 
 button,
+
 input,
+
 textarea,
+
 select {
-  font: inherit;
+
+font: inherit;
+
 }
 
 button {
-  cursor: pointer;
+
+cursor: pointer;
+
 }
 
 button:disabled {
-  cursor: not-allowed;
+
+cursor: not-allowed;
+
 }
 
 textarea {
-  tab-size: 2;
+
+tab-size: 2;
+
 }
 
 ::selection {
-  background: rgba(255, 255, 255, 0.22);
-  color: #ffffff;
+
+background: rgba(255, 255, 255, 0.22);
+
+color: #ffffff;
+
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+
+width: 10px;
+
+height: 10px;
+
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.04);
+
+background: rgba(255, 255, 255, 0.04);
+
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
+
+background: rgba(255, 255, 255, 0.18);
+
+border-radius: 999px;
+
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+
+background: rgba(255, 255, 255, 0.28);
+
 }
 
 #root {
-  min-height: 100vh;
+
+min-height: 100vh;
+
+}
+
+@layer components {
+
+.primary-action {
+
+min-height: 2.75rem;
+
+border-radius: 1rem;
+
+background: #ffffff;
+
+padding-left: 1rem;
+
+padding-right: 1rem;
+
+font-size: 0.75rem;
+
+font-weight: 900;
+
+color: #000000;
+
+transition: transform 160ms ease, opacity 160ms ease;
+
+}
+
+.primary-action:active {
+
+transform: scale(0.98);
+
+}
+
+.primary-action:disabled {
+
+opacity: 0.4;
+
+}
+
+.secondary-action {
+
+min-height: 2.75rem;
+
+border-radius: 1rem;
+
+border: 1px solid rgba(255, 255, 255, 0.1);
+
+background: rgba(255, 255, 255, 0.045);
+
+padding-left: 1rem;
+
+padding-right: 1rem;
+
+font-size: 0.75rem;
+
+font-weight: 900;
+
+color: #ffffff;
+
+transition: background 160ms ease, transform 160ms ease, opacity 160ms ease;
+
+}
+
+.secondary-action:hover {
+
+background: rgba(255, 255, 255, 0.09);
+
+}
+
+.secondary-action:active {
+
+transform: scale(0.98);
+
+}
+
+.secondary-action:disabled {
+
+opacity: 0.4;
+
+}
+
+.danger-action {
+
+min-height: 2.75rem;
+
+border-radius: 1rem;
+
+border: 1px solid rgba(248, 113, 113, 0.3);
+
+background: rgba(239, 68, 68, 0.1);
+
+padding-left: 1rem;
+
+padding-right: 1rem;
+
+font-size: 0.75rem;
+
+font-weight: 900;
+
+color: #fecaca;
+
+transition: transform 160ms ease, opacity 160ms ease;
+
+}
+
+.danger-action:active {
+
+transform: scale(0.98);
+
+}
+
+.danger-action:disabled {
+
+opacity: 0.4;
+
+}
+
+.mobile-nav-action {
+
+min-height: 3rem;
+
+border-radius: 1rem;
+
+border: 1px solid rgba(255, 255, 255, 0.1);
+
+background: rgba(255, 255, 255, 0.055);
+
+font-size: 0.72rem;
+
+font-weight: 900;
+
+color: #ffffff;
+
+}
+
 }
