@@ -644,4 +644,92 @@ const match = String(prompt).match(new RegExp(`${escaped}\\s*:\\s*(.+)`, "i"));
 
 return match?.[1]?.trim() || "";
 
-  }
+}
+
+export function buildExpertPrompt({
+
+userPrompt,
+
+files,
+
+build,
+
+score,
+
+target,
+
+}: {
+
+userPrompt: string;
+
+files: VirtualFile[];
+
+build: any;
+
+score: any;
+
+target: string;
+
+}) {
+
+return buildPhasePrompt({
+
+phase: files.length ? "core_features" : "product_spec",
+
+prompt: userPrompt,
+
+target,
+
+files,
+
+build,
+
+score,
+
+strategy: "normal",
+
+});
+
+}
+
+export function buildRepairPrompt({
+
+userPrompt,
+
+files,
+
+build,
+
+score,
+
+}: {
+
+userPrompt: string;
+
+files: VirtualFile[];
+
+build: any;
+
+score: any;
+
+}) {
+
+return buildPhasePrompt({
+
+phase: "repair",
+
+prompt: userPrompt,
+
+target: "web-app",
+
+files,
+
+build,
+
+score,
+
+strategy: "repair",
+
+});
+
+                                 }
