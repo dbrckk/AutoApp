@@ -504,6 +504,12 @@ return request<{ ok: boolean; jobId: string; files: VirtualFile[]; phase: string
 
 }
 
+export async function getAutonomousJobLogs(jobId: string) {
+
+return request<{ ok: boolean; jobId: string; logs: string[]; status?: string; phase?: string; score?: number }>(`/api/jobs/${jobId}/logs`);
+
+}
+
 export async function getAutonomousJobZipFiles(jobId: string) {
 
 const data = await getAutonomousJobFiles(jobId);
@@ -596,4 +602,18 @@ return request<{ ok: boolean; repo: string; branch: string; path: string; sha: s
 
 );
 
-  }
+}
+
+export async function getGitHubHistory(params: { repo: string; branch?: string }) {
+
+const search = new URLSearchParams({ repo: params.repo, branch: params.branch || "main" });
+
+const data = await request<{ ok: boolean; repo: string; branch: string; commits: any[]; error?: string }>(
+
+`/api/github/history?${search.toString()}`
+
+);
+
+return data.commits || [];
+
+                     }
