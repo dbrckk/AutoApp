@@ -192,7 +192,7 @@ app.selectedFile?.path === file.path
 
 ) : (
 
-<EmptyState title="No matching files" description="Try another search." />
+<EmptyState title="No matching files" message="Try another search." />
 
 )}
 
