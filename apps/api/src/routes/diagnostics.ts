@@ -52,7 +52,7 @@ projectMemory:
 
 schemaInspection.ok &&
 
-schemaInspection.tables?.[0]?.columns?.includes("memory_json")
+(schemaInspection as any).tables?.[0]?.columns?.includes("memory_json")
 
 ? "real"
 
@@ -252,7 +252,7 @@ projectMemory:
 
 schemaInspection.ok &&
 
-schemaInspection.tables?.[0]?.columns?.includes("memory_json")
+(schemaInspection as any).tables?.[0]?.columns?.includes("memory_json")
 
 ? "real"
 
@@ -474,4 +474,4 @@ providers,
 
 };
 
-                      }
+}
