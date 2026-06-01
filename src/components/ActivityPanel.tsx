@@ -1,188 +1,98 @@
 import type { AutoAppState } from "../hooks/useAutoApp";
 
-export function QuickActionsPanel({ app }: { app: AutoAppState }) {
+import { EmptyState } from "./EmptyState";
 
-const hasProject = Boolean(app.activeJobId);
+export function ActivityPanel({ app }: { app: AutoAppState }) {
 
-const hasFiles = Boolean(app.files?.length);
-
-const hasRepo = Boolean(app.githubRepo?.trim());
-
-const actions = [
-
-{
-
-label: "Start",
-
-description: "Create autonomous project",
-
-disabled: app.busy,
-
-onClick: app.handleStartAutonomous,
-
-primary: true,
-
-},
-
-{
-
-label: "Step",
-
-description: "Run one cycle",
-
-disabled: app.busy || !hasProject,
-
-onClick: app.handleStepJob,
-
-},
-
-{
-
-label: "Resume",
-
-description: "Resume active job",
-
-disabled: app.busy || !hasProject,
-
-onClick: app.handleResumeJob,
-
-},
-
-{
-
-label: "Improve",
-
-description: "Force next improvement",
-
-disabled: app.busy || !hasProject,
-
-onClick: () => app.handleImproveJob(app.activeJobId),
-
-},
-
-{
-
-label: "Report",
-
-description: "Refresh memory/report",
-
-disabled: app.busy || !hasProject,
-
-onClick: () => app.refreshProjectReport(app.activeJobId),
-
-},
-
-{
-
-label: "Live test",
-
-description: "Backend diagnostics",
-
-disabled: app.busy,
-
-onClick: app.handleLiveDiagnostics,
-
-},
-
-{
-
-label: "ZIP",
-
-description: "Download project",
-
-disabled: app.busy || !hasFiles,
-
-onClick: app.handleExportZip,
-
-},
-
-{
-
-label: "GitHub",
-
-description: "Manual export",
-
-disabled: app.busy || !hasFiles || !hasRepo,
-
-onClick: app.handleExportGitHub,
-
-},
-
-];
+const events = app.activityEvents || [];
 
 return (
 
 <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 shadow-2xl">
 
-<div className="mb-4">
+<div className="mb-4 flex items-start justify-between gap-3">
 
-<h2 className="text-lg font-black text-white">Quick Actions</h2>
+<div>
+
+<h2 className="text-lg font-black text-white">Activity</h2>
 
 <p className="mt-1 text-xs text-zinc-500">
 
-Fast control surface for autonomous project execution.
+Frontend actions, errors, exports and recovery events.
 
 </p>
 
 </div>
 
-<div className="grid grid-cols-2 gap-2">
-
-{actions.map((action) => (
-
 <button
 
-key={action.label}
+onClick={app.clearActivityEvents}
 
-onClick={action.onClick}
+disabled={!events.length}
 
-disabled={action.disabled}
-
-className={`min-h-20 rounded-2xl border p-3 text-left transition disabled:opacity-40 active:scale-[0.98] ${
-
-action.primary
-
-? "border-white/20 bg-white text-black"
-
-: "border-white/10 bg-black/40 text-white hover:bg-white/10"
-
-}`}
+className="min-h-10 rounded-2xl border border-white/10 bg-black/40 px-4 text-xs font-black text-white disabled:opacity-40 active:scale-[0.98]"
 
 >
 
-<span className="block text-sm font-black">{action.label}</span>
+Clear
 
-<span
+</button>
 
-className={`mt-1 block text-xs leading-4 ${
+</div>
 
-action.primary ? "text-black/60" : "text-zinc-500"
+{events.length ? (
 
-}`}
+<div className="grid gap-2">
+
+{events.slice(0, 20).map((event) => (
+
+<article
+
+key={event.id}
+
+className="rounded-2xl border border-white/10 bg-black/40 p-3"
 
 >
 
-{action.description}
+<div className="flex items-start justify-between gap-3">
+
+<p className="text-xs font-black text-white">{event.title}</p>
+
+<span className="shrink-0 text-[10px] text-zinc-600">
+
+{new Date(event.at).toLocaleTimeString()}
 
 </span>
 
-</button>
+</div>
+
+{event.message ? (
+
+<p className="mt-1 text-xs leading-5 text-zinc-500">
+
+{event.message}
+
+</p>
+
+) : null}
+
+</article>
 
 ))}
 
 </div>
 
-<div className="mt-4 rounded-2xl border border-white/10 bg-black/40 p-3">
+) : (
 
-<p className="text-xs font-black text-white">Current status</p>
+<EmptyState
 
-<p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-500">
+title="No activity yet"
 
-{app.status}
+description="Actions will appear here as the app runs."
 
-</p>
+/>
 
-</div>
+)}
 
 </section>
 
