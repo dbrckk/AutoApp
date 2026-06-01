@@ -34,13 +34,9 @@ generateProject,
 
 getAutonomousJobFiles,
 
-getAutonomousJobLogs,
-
 getDiagnostics,
 
 getGitHubFileStatus,
-
-getGitHubHistory,
 
 getLatestGitHubCommit,
 
@@ -90,10 +86,6 @@ const [activeJobId, setActiveJobId] = useState("");
 
 const [jobs, setJobs] = useState<AutonomousJob[]>([]);
 
-const [jobLogs, setJobLogs] = useState<string[]>([]);
-
-const [githubHistory, setGithubHistory] = useState<any[]>([]);
-
 const [githubRepo, setGithubRepo] = useState("");
 
 const [githubBranch, setGithubBranch] = useState("main");
@@ -131,24 +123,6 @@ const selectedFile = useMemo(
 [files, selectedPath]
 
 );
-
-const activeJob = useMemo(
-
-() => jobs.find((job) => job.id === activeJobId) || null,
-
-[jobs, activeJobId]
-
-);
-
-const projectStats = useMemo(() => {
-
-const lines = files.reduce((sum, file) => sum + String(file.content || "").split("\n").length, 0);
-
-const chars = files.reduce((sum, file) => sum + String(file.content || "").length, 0);
-
-return { files: files.length, lines, chars };
-
-}, [files]);
 
 function buildPromptWithGitHubTarget(rawPrompt: string) {
 
@@ -229,60 +203,6 @@ setFiles(nextFiles);
 setSelectedPath(nextFiles[0]?.path || "");
 
 return data;
-
-}
-
-async function handleLoadJobLogs(jobId = activeJobId) {
-
-if (!jobId) {
-
-setStatus("No active project selected.");
-
-return [];
-
-}
-
-const data = await getAutonomousJobLogs(jobId);
-
-setJobLogs(data.logs || []);
-
-return data.logs || [];
-
-}
-
-async function handleLoadGitHubHistory() {
-
-if (!githubRepo.trim()) {
-
-setStatus("Missing GitHub repo.");
-
-return [];
-
-}
-
-const commits = await getGitHubHistory({ repo: githubRepo.trim(), branch: githubBranch.trim() || "main" });
-
-setGithubHistory(commits || []);
-
-return commits || [];
-
-}
-
-async function handleOpenProject(jobId: string) {
-
-setActiveJobId(jobId);
-
-await runAction("Opening project...", async () => {
-
-const filesResult = await refreshJobFiles(jobId);
-
-const logsResult = await handleLoadJobLogs(jobId).catch(() => []);
-
-await refreshJobs().catch(() => []);
-
-return { ok: true, files: filesResult?.files || [], logs: logsResult };
-
-});
 
 }
 
@@ -438,8 +358,6 @@ const job = await runAutonomousJobStep(activeJobId);
 
 await refreshJobFiles(activeJobId);
 
-await handleLoadJobLogs(activeJobId).catch(() => []);
-
 await refreshJobs();
 
 return job;
@@ -467,8 +385,6 @@ setActiveJobId(job.id);
 await refreshJobs();
 
 await refreshJobFiles(job.id);
-
-await handleLoadJobLogs(job.id).catch(() => []);
 
 return job;
 
@@ -1006,27 +922,13 @@ selectedFile,
 
 activeJobId,
 
-activeJob,
-
 setActiveJobId,
 
 jobs,
 
-jobLogs,
-
-githubHistory,
-
-projectStats,
-
 refreshJobs,
 
 refreshJobFiles,
-
-handleOpenProject,
-
-handleLoadJobLogs,
-
-handleLoadGitHubHistory,
 
 githubRepo,
 
