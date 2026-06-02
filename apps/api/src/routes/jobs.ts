@@ -154,6 +154,24 @@ error: error?.message || "Autonomous job failed",
 
 });
 
+
+jobsRoutes.delete("/:id", async (c) => {
+  if (!c.env.DB) {
+    return c.json({ ok: false, error: "D1 DB binding missing" }, 500);
+  }
+
+  const id = c.req.param("id");
+  const existing = await getPersistentJob(c.env.DB, id);
+
+  if (!existing) {
+    return c.json({ ok: false, error: "Job not found" }, 404);
+  }
+
+  await c.env.DB.prepare("DELETE FROM jobs WHERE id = ?").bind(id).run();
+
+  return c.json({ ok: true, id });
+});
+
 jobsRoutes.get("/:id", async (c) => {
 
 if (!c.env.DB) {
@@ -385,3 +403,4 @@ report,
 });
 
 });
+                
