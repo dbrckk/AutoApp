@@ -50,4 +50,13 @@ The app must feel like a real shipped product, not a demo. It needs onboarding, 
 auto improve forever: true`;
 
 const PRODUCT_DIRECTIVE = `
-PROFESS
+PROFESSIONAL PRODUCT REQUIREMENTS:
+- Generate a complete real application, not a placeholder.
+- Build a mobile-first production interface with clear navigation.
+- Include real empty, loading and error states.
+- Include onboarding, dashboard, settings and export workflows when relevant.
+- Add local persistence where useful.
+- Add polished UI, spacing, hierarchy, accessibility and responsive behavior.
+- Keep all files complete and buildable.
+- Avoid placeholder-only pages.
+`;
