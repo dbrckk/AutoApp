@@ -1,138 +1,312 @@
+import { Suspense, lazy, useMemo, useState } from "react";
+
 import { useAutoApp } from "./hooks/useAutoApp";
+
+import { ErrorBoundary } from "./components/ErrorBoundary";
+
+import { RuntimeBanner } from "./components/RuntimeBanner";
+
+import { NotificationCenter } from "./components/NotificationCenter";
+
+import { FloatingCommandBar } from "./components/FloatingCommandBar";
+
+import { TopStatusBar } from "./components/TopStatusBar";
+
+import { MobileTabBar, type AppTab } from "./components/MobileTabBar";
+
+import { MobileScreen } from "./components/MobileScreen";
+
+import { DashboardScreen } from "./components/DashboardScreen";
 
 import { PromptPanel } from "./components/PromptPanel";
 
 import { GitHubPanel } from "./components/GitHubPanel";
 
-import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
-
 import { ProjectToolsPanel } from "./components/ProjectToolsPanel";
 
-import { SnapshotsPanel } from "./components/SnapshotsPanel";
+import { QuickActionsPanel } from "./components/QuickActionsPanel";
 
 import { ProjectsPanel } from "./components/ProjectsPanel";
 
-import { JobList } from "./components/JobList";
+import { ProjectMemoryPanel } from "./components/ProjectMemoryPanel";
+
+import { SystemStatusPanel } from "./components/SystemStatusPanel";
+
+import { AutonomousTimeline } from "./components/AutonomousTimeline";
+
+import { ProjectScoreRadar } from "./components/ProjectScoreRadar";
+
+import { SchemaHealthPanel } from "./components/SchemaHealthPanel";
+
+import { SessionRecoveryPanel } from "./components/SessionRecoveryPanel";
+
+import { ActivityPanel } from "./components/ActivityPanel";
+
+import { BuildReadinessPanel } from "./components/BuildReadinessPanel";
+
+import { ReleaseChecklistPanel } from "./components/ReleaseChecklistPanel";
+
+import { PreflightPanel } from "./components/PreflightPanel";
+
+import { JobLogsPanel } from "./components/JobLogsPanel";
 
 import { FileExplorer } from "./components/FileExplorer";
 
 import { ResultPanel } from "./components/ResultPanel";
 
-import { Panel } from "./components/Panel";
-
 import { FileActionModal } from "./components/FileActionModal";
 
 import { ConfirmModal } from "./components/ConfirmModal";
 
-export default function App() {
+const SnapshotsPanel = lazy(() =>
 
-const app = useAutoApp();
+import("./components/SnapshotsPanel").then((mod) => ({
+
+default: mod.SnapshotsPanel,
+
+}))
+
+);
+
+const GitHubHistoryPanel = lazy(() =>
+
+import("./components/GitHubHistoryPanel").then((mod) => ({
+
+default: mod.GitHubHistoryPanel,
+
+}))
+
+);
+
+const DiagnosticsLazyPanel = lazy(() =>
+
+import("./components/DiagnosticsPanel").then((mod) => ({
+
+default: mod.DiagnosticsPanel,
+
+}))
+
+);
+
+export default function App() {
 
 return (
 
-<main className="min-h-screen bg-[#050505] px-4 pb-6 pt-24 text-white md:px-8">
+<ErrorBoundary>
 
-<div className="fixed left-0 right-0 top-0 z-40 border-b border-white/10 bg-black/90 px-4 py-3 backdrop-blur">
+<AutoAppShell />
 
-<div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+</ErrorBoundary>
 
-<div className="min-w-0">
+);
 
-<p className="text-sm font-black text-white">
+}
 
-{app.busy ? "Working..." : "AutoApp"}
+function AutoAppShell() {
 
-</p>
+const app = useAutoApp();
 
-<p className="line-clamp-1 text-xs text-zinc-400">
+const [activeTab, setActiveTab] = useState<AppTab>("home");
 
-{app.status}
+const resultPayload = useMemo(
 
-</p>
+() => app.result || app.diagnostics || app.projectReport || {},
+
+[app.result, app.diagnostics, app.projectReport]
+
+);
+
+return (
+
+<main className="app-shell text-white">
+
+<TopStatusBar app={app} />
+
+<RuntimeBanner app={app} />
+
+<NotificationCenter app={app} />
+
+<section className="mx-auto w-full max-w-[1500px] px-3 pb-40 pt-24 md:px-6 lg:px-8">
+
+<div className="mb-4 rounded-[2rem] border border-emerald-400/25 bg-emerald-500/10 p-4 text-sm font-black text-emerald-100 shadow-2xl">
+
+UI/UX V2 ACTIVE — scroll fix deployed
 
 </div>
 
-<button
+<div className="desktop-workspace hidden lg:grid">
 
-onClick={() => app.handleDiagnostics()}
+<aside className="desktop-sidebar space-y-4">
 
-disabled={app.busy}
+<HeroCard app={app} />
 
-className="shrink-0 rounded-xl border border-white/10 bg-white px-3 py-2 text-xs font-black text-black disabled:opacity-50"
+<SessionRecoveryPanel app={app} />
 
->
-
-Test API
-
-</button>
-
-</div>
-
-</div>
-
-<section className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[430px_1fr]">
-
-<aside className="space-y-5">
-
-<PromptPanel app={app} />
+<QuickActionsPanel app={app} />
 
 <ProjectsPanel app={app} />
 
 <GitHubPanel app={app} />
 
-<DiagnosticsPanel app={app} />
-
 <ProjectToolsPanel app={app} />
-
-<SnapshotsPanel app={app} />
 
 </aside>
 
-<section className="space-y-5">
+<section className="desktop-main space-y-4">
 
-<Panel title="Status">
+<div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
 
-<div className="rounded-2xl border border-white/10 bg-black/40 p-4">
+<div className="space-y-4">
 
-<p className="text-sm text-zinc-300">
-
-{app.busy ? "Working..." : app.status}
-
-</p>
-
-{app.activeJobId ? (
-
-<p className="mt-2 break-all text-xs text-zinc-500">
-
-Active project: {app.activeJobId}
-
-</p>
-
-) : null}
-
-{app.githubRepo ? (
-
-<p className="mt-2 break-all text-xs text-zinc-500">
-
-GitHub target: {app.githubRepo} · branch {app.githubBranch || "main"}
-
-</p>
-
-) : null}
-
-</div>
-
-</Panel>
-
-<JobList app={app} />
+<DashboardScreen app={app} />
 
 <FileExplorer app={app} />
 
-<ResultPanel result={app.result || app.diagnostics} />
+<AutonomousTimeline app={app} />
+
+<JobLogsPanel app={app} />
+
+</div>
+
+<aside className="space-y-4">
+
+<ProjectScoreRadar app={app} />
+
+<BuildReadinessPanel app={app} />
+
+<PreflightPanel app={app} />
+
+<ProjectMemoryPanel app={app} />
+
+<SystemStatusPanel app={app} />
+
+<SchemaHealthPanel app={app} />
+
+</aside>
+
+</div>
+
+<div className="grid gap-4 xl:grid-cols-2">
+
+<ActivityPanel app={app} />
+
+<ReleaseChecklistPanel app={app} />
+
+</div>
+
+<Suspense fallback={<PanelFallback title="GitHub history" />}>
+
+<GitHubHistoryPanel app={app} />
+
+</Suspense>
+
+<Suspense fallback={<PanelFallback title="Diagnostics" />}>
+
+<DiagnosticsLazyPanel app={app} />
+
+</Suspense>
+
+<Suspense fallback={<PanelFallback title="Snapshots" />}>
+
+<SnapshotsPanel app={app} />
+
+</Suspense>
+
+<ResultPanel result={resultPayload} />
 
 </section>
 
+</div>
+
+<div className="lg:hidden">
+
+<MobileScreen active={activeTab === "home"}>
+
+<HeroCard app={app} />
+
+<SessionRecoveryPanel app={app} />
+
+<DashboardScreen app={app} />
+
+<QuickActionsPanel app={app} />
+
+<ProjectScoreRadar app={app} />
+
+<BuildReadinessPanel app={app} />
+
+<PromptPanel app={app} />
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "projects"}>
+
+<ProjectsPanel app={app} />
+
+<FileExplorer app={app} />
+
+<ProjectMemoryPanel app={app} />
+
+<AutonomousTimeline app={app} />
+
+<JobLogsPanel app={app} />
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "editor"}>
+
+<FileExplorer app={app} />
+
+<ResultPanel result={resultPayload} />
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "github"}>
+
+<GitHubPanel app={app} />
+
+<Suspense fallback={<PanelFallback title="GitHub history" />}>
+
+<GitHubHistoryPanel app={app} />
+
+</Suspense>
+
+</MobileScreen>
+
+<MobileScreen active={activeTab === "tools"}>
+
+<ProjectToolsPanel app={app} />
+
+<PreflightPanel app={app} />
+
+<SystemStatusPanel app={app} />
+
+<SchemaHealthPanel app={app} />
+
+<ActivityPanel app={app} />
+
+<ReleaseChecklistPanel app={app} />
+
+<Suspense fallback={<PanelFallback title="Diagnostics" />}>
+
+<DiagnosticsLazyPanel app={app} />
+
+</Suspense>
+
+<Suspense fallback={<PanelFallback title="Snapshots" />}>
+
+<SnapshotsPanel app={app} />
+
+</Suspense>
+
+</MobileScreen>
+
+</div>
+
 </section>
+
+<FloatingCommandBar app={app} />
+
+<MobileTabBar activeTab={activeTab} onChange={setActiveTab} />
 
 <FileActionModal
 
@@ -171,3 +345,103 @@ onConfirm={app.handleConfirmDeleteSelectedFile}
 );
 
 }
+
+function HeroCard({ app }: { app: ReturnType<typeof useAutoApp> }) {
+
+return (
+
+<section className="premium-panel rounded-[2rem] p-5">
+
+<div className="flex items-start justify-between gap-4">
+
+<div>
+
+<p className="text-xs font-black uppercase tracking-[0.28em] text-emerald-200">
+
+AutoApp OS
+
+</p>
+
+<h1 className="mt-3 text-3xl font-black tracking-tight text-white">
+
+Autonomous product workspace
+
+</h1>
+
+<p className="mt-3 text-sm leading-6 text-zinc-400">
+
+Build, monitor, repair and export autonomous projects from one focused workspace.
+
+</p>
+
+</div>
+
+<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
+
+<p className="text-2xl font-black text-white">
+
+{app.activeJob?.score || app.projectReport?.score?.total || 0}
+
+</p>
+
+<p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">
+
+score
+
+</p>
+
+</div>
+
+</div>
+
+<div className="mt-5 grid grid-cols-3 gap-2">
+
+<MiniStat label="Files" value={String(app.files?.length || 0)} />
+
+<MiniStat label="Jobs" value={String(app.jobs?.length || 0)} />
+
+<MiniStat label="State" value={app.busy ? "busy" : "ready"} />
+
+</div>
+
+</section>
+
+);
+
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+
+return (
+
+<div className="premium-card rounded-2xl px-3 py-3">
+
+<p className="truncate text-sm font-black text-white">{value}</p>
+
+<p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+
+{label}
+
+</p>
+
+</div>
+
+);
+
+}
+
+function PanelFallback({ title }: { title: string }) {
+
+return (
+
+<section className="premium-panel rounded-3xl p-5">
+
+<h2 className="text-lg font-black text-white">{title}</h2>
+
+<div className="mt-4 h-20 animate-pulse rounded-2xl bg-white/5" />
+
+</section>
+
+);
+
+  }
