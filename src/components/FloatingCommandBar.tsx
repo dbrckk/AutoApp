@@ -6,7 +6,7 @@ const hasProject = Boolean(app.activeJobId);
 
 return (
 
-<div className="fixed bottom-24 left-3 right-3 z-30 mx-auto max-w-lg rounded-[1.5rem] border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur-xl lg:hidden">
+<div className="fixed bottom-[5.7rem] left-3 right-3 z-30 mx-auto max-w-lg rounded-[1.5rem] border border-white/10 bg-black/90 p-2 shadow-2xl backdrop-blur-xl lg:hidden">
 
 <div className="grid grid-cols-4 gap-1">
 
