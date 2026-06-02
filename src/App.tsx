@@ -1,447 +1,59 @@
-import { Suspense, lazy, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useAutoApp } from "./hooks/useAutoApp";
 
-import { ErrorBoundary } from "./components/ErrorBoundary";
-
-import { RuntimeBanner } from "./components/RuntimeBanner";
-
-import { NotificationCenter } from "./components/NotificationCenter";
-
-import { FloatingCommandBar } from "./components/FloatingCommandBar";
-
-import { TopStatusBar } from "./components/TopStatusBar";
-
-import { MobileTabBar, type AppTab } from "./components/MobileTabBar";
-
-import { MobileScreen } from "./components/MobileScreen";
-
-import { DashboardScreen } from "./components/DashboardScreen";
-
-import { PromptPanel } from "./components/PromptPanel";
-
-import { GitHubPanel } from "./components/GitHubPanel";
-
-import { ProjectToolsPanel } from "./components/ProjectToolsPanel";
-
-import { QuickActionsPanel } from "./components/QuickActionsPanel";
-
 import { ProjectsPanel } from "./components/ProjectsPanel";
-
-import { ProjectMemoryPanel } from "./components/ProjectMemoryPanel";
-
-import { SystemStatusPanel } from "./components/SystemStatusPanel";
-
-import { AutonomousTimeline } from "./components/AutonomousTimeline";
-
-import { ProjectScoreRadar } from "./components/ProjectScoreRadar";
-
-import { SchemaHealthPanel } from "./components/SchemaHealthPanel";
-
-import { SessionRecoveryPanel } from "./components/SessionRecoveryPanel";
-
-import { ActivityPanel } from "./components/ActivityPanel";
-
-import { BuildReadinessPanel } from "./components/BuildReadinessPanel";
-
-import { ReleaseChecklistPanel } from "./components/ReleaseChecklistPanel";
-
-import { PreflightPanel } from "./components/PreflightPanel";
-
-import { JobLogsPanel } from "./components/JobLogsPanel";
 
 import { FileExplorer } from "./components/FileExplorer";
 
-import { ResultPanel } from "./components/ResultPanel";
+import { GitHubHistoryPanel } from "./components/GitHubHistoryPanel";
 
-import { FileActionModal } from "./components/FileActionModal";
+import { JobLogsPanel } from "./components/JobLogsPanel";
 
 import { ConfirmModal } from "./components/ConfirmModal";
 
-const SnapshotsPanel = lazy(() =>
+import { FileActionModal } from "./components/FileActionModal";
 
-import("./components/SnapshotsPanel").then((mod) => ({
+type WorkspaceTab = "overview" | "files" | "timeline" | "logs" | "github" | "settings";
 
-default: mod.SnapshotsPanel,
-
-}))
-
-);
-
-const GitHubHistoryPanel = lazy(() =>
-
-import("./components/GitHubHistoryPanel").then((mod) => ({
-
-default: mod.GitHubHistoryPanel,
-
-}))
-
-);
-
-const DiagnosticsLazyPanel = lazy(() =>
-
-import("./components/DiagnosticsPanel").then((mod) => ({
-
-default: mod.DiagnosticsPanel,
-
-}))
-
-);
+const NAV = [{ id: "overview", label: "Projects", icon: "▣" },{ id: "files", label: "Files", icon: "▤" },{ id: "timeline", label: "Monitor", icon: "◌" },{ id: "logs", label: "Logs", icon: "☰" },{ id: "github", label: "GitHub", icon: "◇" },{ id: "settings", label: "Release", icon: "⚙" }] as const;
 
 export default function App() {
 
-return (
-
-<ErrorBoundary>
-
-<AutoAppShell />
-
-</ErrorBoundary>
-
-);
-
-}
-
-function AutoAppShell() {
-
 const app = useAutoApp();
 
-const [activeTab, setActiveTab] = useState<AppTab>("home");
+const [tab, setTab] = useState<WorkspaceTab>("overview");
 
-const resultPayload = useMemo(
+const activeScore = Number(app.activeJob?.score || app.projectReport?.score?.total || 0);
 
-() => app.result || app.diagnostics || app.projectReport || {},
+const health = useMemo(() => !app.activeJob ? "No active project" : app.activeJob.status === "running" ? "Running" : app.activeJob.status === "done" ? "Completed" : app.activeJob.status, [app.activeJob]);
 
-[app.result, app.diagnostics, app.projectReport]
-
-);
-
-return (
-
-<main className="app-shell text-white">
-
-<TopStatusBar app={app} />
-
-<RuntimeBanner app={app} />
-
-<NotificationCenter app={app} />
-
-<section className="mx-auto w-full max-w-[1500px] px-3 pb-40 pt-24 md:px-6 lg:px-8">
-
-<div className="mb-4 rounded-[2rem] border border-emerald-400/25 bg-emerald-500/10 p-4 text-sm font-black text-emerald-100 shadow-2xl">
-
-UI/UX V2 ACTIVE — scroll fix deployed
-
-</div>
-
-<div className="desktop-workspace hidden lg:grid">
-
-<aside className="desktop-sidebar space-y-4">
-
-<HeroCard app={app} />
-
-<SessionRecoveryPanel app={app} />
-
-<QuickActionsPanel app={app} />
-
-<ProjectsPanel app={app} />
-
-<GitHubPanel app={app} />
-
-<ProjectToolsPanel app={app} />
-
-</aside>
-
-<section className="desktop-main space-y-4">
-
-<div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-
-<div className="space-y-4">
-
-<DashboardScreen app={app} />
-
-<FileExplorer app={app} />
-
-<AutonomousTimeline app={app} />
-
-<JobLogsPanel app={app} />
-
-</div>
-
-<aside className="space-y-4">
-
-<ProjectScoreRadar app={app} />
-
-<BuildReadinessPanel app={app} />
-
-<PreflightPanel app={app} />
-
-<ProjectMemoryPanel app={app} />
-
-<SystemStatusPanel app={app} />
-
-<SchemaHealthPanel app={app} />
-
-</aside>
-
-</div>
-
-<div className="grid gap-4 xl:grid-cols-2">
-
-<ActivityPanel app={app} />
-
-<ReleaseChecklistPanel app={app} />
-
-</div>
-
-<Suspense fallback={<PanelFallback title="GitHub history" />}>
-
-<GitHubHistoryPanel app={app} />
-
-</Suspense>
-
-<Suspense fallback={<PanelFallback title="Diagnostics" />}>
-
-<DiagnosticsLazyPanel app={app} />
-
-</Suspense>
-
-<Suspense fallback={<PanelFallback title="Snapshots" />}>
-
-<SnapshotsPanel app={app} />
-
-</Suspense>
-
-<ResultPanel result={resultPayload} />
-
-</section>
-
-</div>
-
-<div className="lg:hidden">
-
-<MobileScreen active={activeTab === "home"}>
-
-<HeroCard app={app} />
-
-<SessionRecoveryPanel app={app} />
-
-<DashboardScreen app={app} />
-
-<QuickActionsPanel app={app} />
-
-<ProjectScoreRadar app={app} />
-
-<BuildReadinessPanel app={app} />
-
-<PromptPanel app={app} />
-
-</MobileScreen>
-
-<MobileScreen active={activeTab === "projects"}>
-
-<ProjectsPanel app={app} />
-
-<FileExplorer app={app} />
-
-<ProjectMemoryPanel app={app} />
-
-<AutonomousTimeline app={app} />
-
-<JobLogsPanel app={app} />
-
-</MobileScreen>
-
-<MobileScreen active={activeTab === "editor"}>
-
-<FileExplorer app={app} />
-
-<ResultPanel result={resultPayload} />
-
-</MobileScreen>
-
-<MobileScreen active={activeTab === "github"}>
-
-<GitHubPanel app={app} />
-
-<Suspense fallback={<PanelFallback title="GitHub history" />}>
-
-<GitHubHistoryPanel app={app} />
-
-</Suspense>
-
-</MobileScreen>
-
-<MobileScreen active={activeTab === "tools"}>
-
-<ProjectToolsPanel app={app} />
-
-<PreflightPanel app={app} />
-
-<SystemStatusPanel app={app} />
-
-<SchemaHealthPanel app={app} />
-
-<ActivityPanel app={app} />
-
-<ReleaseChecklistPanel app={app} />
-
-<Suspense fallback={<PanelFallback title="Diagnostics" />}>
-
-<DiagnosticsLazyPanel app={app} />
-
-</Suspense>
-
-<Suspense fallback={<PanelFallback title="Snapshots" />}>
-
-<SnapshotsPanel app={app} />
-
-</Suspense>
-
-</MobileScreen>
-
-</div>
-
-</section>
-
-<FloatingCommandBar app={app} />
-
-<MobileTabBar activeTab={activeTab} onChange={setActiveTab} />
-
-<FileActionModal
-
-mode={app.fileActionMode}
-
-value={app.fileActionValue}
-
-onChange={app.setFileActionValue}
-
-onCancel={app.handleCancelFileAction}
-
-onConfirm={app.handleConfirmFileAction}
-
-/>
-
-<ConfirmModal
-
-open={Boolean(app.confirmDeleteFilePath)}
-
-title="Delete file"
-
-message={`Delete ${app.confirmDeleteFilePath}? A local snapshot will be saved before deletion.`}
-
-confirmLabel="Delete"
-
-danger
-
-onCancel={app.handleCancelDeleteFile}
-
-onConfirm={app.handleConfirmDeleteSelectedFile}
-
-/>
-
-</main>
-
-);
+return <main className="app-bg text-white"><div className="mx-auto flex min-h-screen w-full max-w-[1540px] gap-0 px-3 py-3 lg:px-4"><aside className="hidden w-[260px] shrink-0 flex-col border-r border-white/10 pr-3 lg:flex"><Brand/><button onClick={app.handleStartAutonomous} disabled={app.busy} className="neon-button mt-6 min-h-12 rounded-2xl px-4 text-sm font-black text-white transition active:scale-[0.98] disabled:opacity-50">+ New Project</button><nav className="mt-6 grid gap-1">{NAV.map((item)=>{const active=tab===item.id;return <button key={item.id} onClick={()=>setTab(item.id)} className={`flex min-h-12 items-center gap-3 rounded-2xl px-4 text-left text-sm transition ${active?"bg-white/10 text-white shadow-lg":"text-slate-400 hover:bg-white/6 hover:text-white"}`}><span className="grid h-7 w-7 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-xs">{item.icon}</span><span className="font-bold">{item.label}</span></button>})}</nav><div className="mt-auto grid gap-3 pb-3"><div className="glass-panel rounded-3xl p-4"><p className="text-xs font-black text-white">Current status</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">{app.status}</p></div><div className="glass-panel rounded-3xl p-4"><p className="text-xs font-black text-white">AutoApp OS</p><p className="mt-1 text-xs text-slate-400">Premium workspace</p></div></div></aside><section className="min-w-0 flex-1 lg:pl-4"><header className="glass-panel sticky top-3 z-30 mb-4 rounded-[1.7rem] p-3"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-black uppercase tracking-[0.24em] text-violet-200">AutoApp</p><h1 className="truncate text-xl font-black tracking-tight text-white sm:text-2xl">{app.activeJob?.target || "Autonomous Projects"}</h1></div><div className="hidden min-w-0 flex-1 items-center justify-center px-4 md:flex"><div className="input-premium flex h-11 w-full max-w-md items-center gap-2 rounded-2xl px-4"><span className="text-slate-500">⌕</span><input value={app.githubRepo} onChange={(event)=>app.setGithubRepo(event.target.value)} placeholder="GitHub repo: owner/repo" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600"/></div></div><div className="flex items-center gap-2"><button onClick={app.handleLiveDiagnostics} disabled={app.busy} className="hidden h-11 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-xs font-black text-white transition hover:bg-white/10 disabled:opacity-50 sm:block">Test</button><button onClick={app.handleStartAutonomous} disabled={app.busy} className="neon-button h-11 rounded-2xl px-4 text-xs font-black text-white disabled:opacity-50">New</button></div></div><div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">{NAV.map((item)=><button key={item.id} onClick={()=>setTab(item.id)} className={`shrink-0 rounded-2xl px-4 py-2 text-xs font-black ${tab===item.id?"bg-white text-black":"border border-white/10 bg-white/[0.04] text-slate-300"}`}>{item.label}</button>)}</div></header><section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]"><div className="min-w-0 space-y-4"><HeroWorkspace app={app} score={activeScore} health={health}/>{tab==="overview"?<><ProjectsPanel app={app}/><ProfessionalPrompt app={app}/></>:null}{tab==="files"?<FileExplorer app={app}/>:null}{tab==="timeline"?<TimelinePanel app={app}/>:null}{tab==="logs"?<JobLogsPanel app={app}/>:null}{tab==="github"?<GitHubPanelPremium app={app}/>:null}{tab==="settings"?<ReleasePanel app={app}/>:null}</div><aside className="space-y-4"><ScoreCard score={activeScore} app={app}/><StatsCard app={app}/><QuickActions app={app}/><SystemCard app={app}/></aside></section></section></div><MobileBottomNav tab={tab} setTab={setTab}/><FileActionModal mode={app.fileActionMode} value={app.fileActionValue} onChange={app.setFileActionValue} onCancel={app.handleCancelFileAction} onConfirm={app.handleConfirmFileAction}/><ConfirmModal open={Boolean(app.confirmDeleteFilePath)} title="Delete file" message={`Delete ${app.confirmDeleteFilePath}?`} confirmLabel="Delete" danger onCancel={app.handleCancelDeleteFile} onConfirm={app.handleConfirmDeleteSelectedFile}/></main>;
 
 }
 
-function HeroCard({ app }: { app: ReturnType<typeof useAutoApp> }) {
+function Brand(){return <div className="flex items-center gap-3 pt-4"><div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-700 text-lg font-black shadow-[0_0_45px_rgba(124,92,255,0.45)]">A</div><div><p className="text-lg font-black tracking-tight text-white">AutoApp</p><p className="text-xs text-slate-500">Product OS</p></div></div>}
 
-return (
+function HeroWorkspace({app,score,health}:{app:ReturnType<typeof useAutoApp>;score:number;health:string}){return <section className="glass-panel overflow-hidden rounded-[2rem] p-5"><div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1 text-[11px] font-black text-violet-200">{health}</span><span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-black text-emerald-200">Infinite improvement</span></div><h2 className="mt-4 text-2xl font-black tracking-tight text-white md:text-4xl">{app.activeJob?.target || "Build a serious product, not a demo"}</h2><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">{app.activeJob?.prompt || "Create, improve, monitor, export and release autonomous projects from a focused premium workspace."}</p></div><div className="grid min-w-[160px] place-items-center rounded-[2rem] border border-white/10 bg-black/25 p-5"><div className="grid h-28 w-28 place-items-center rounded-full border-[10px] border-violet-500/80 bg-white/[0.03] shadow-[0_0_60px_rgba(124,92,255,0.35)]"><div className="text-center"><p className="text-3xl font-black text-white">{score}</p><p className="text-xs text-slate-500">/100</p></div></div></div></div></section>}
 
-<section className="premium-panel rounded-[2rem] p-5">
+function ProfessionalPrompt({app}:{app:ReturnType<typeof useAutoApp>}){return <section className="glass-panel rounded-[2rem] p-5"><h2 className="text-lg font-black text-white">Create professional project</h2><p className="mt-1 text-sm text-slate-500">The prompt is automatically strengthened with production requirements.</p><textarea value={app.prompt} onChange={(event)=>app.setPrompt(event.target.value)} className="input-premium mt-4 min-h-[220px] w-full rounded-3xl p-4 text-sm leading-6"/><div className="mt-4 grid gap-2 sm:grid-cols-2"><button onClick={app.handleGenerate} disabled={app.busy} className="min-h-12 rounded-2xl border border-white/10 bg-white/[0.06] px-4 text-sm font-black text-white disabled:opacity-50">Generate preview</button><button onClick={app.handleStartAutonomous} disabled={app.busy} className="neon-button min-h-12 rounded-2xl px-4 text-sm font-black text-white disabled:opacity-50">Start autonomous build</button></div></section>}
 
-<div className="flex items-start justify-between gap-4">
+function ScoreCard({score,app}:{score:number;app:ReturnType<typeof useAutoApp>}){return <section className="glass-panel rounded-[2rem] p-5"><p className="text-sm font-black text-white">Overall Score</p><div className="mt-5 grid place-items-center"><div className="grid h-36 w-36 place-items-center rounded-full border-[12px] border-violet-500 bg-black/20 shadow-[0_0_70px_rgba(124,92,255,0.35)]"><div className="text-center"><p className="text-4xl font-black text-white">{score}</p><p className="text-xs text-slate-500">/100</p></div></div></div><p className="mt-4 text-center text-sm font-bold text-emerald-300">{score>=90?"Excellent":score>=70?"Good progress":"Needs improvement"}</p><p className="mt-2 text-center text-xs text-slate-500">{app.activeJob?.phase?`Phase: ${app.activeJob.phase}`:"No active phase"}</p></section>}
 
-<div>
+function StatsCard({app}:{app:ReturnType<typeof useAutoApp>}){const stats=[["Projects",app.jobs.length],["Running",app.projectStats.running],["Files",app.projectStats.files],["Lines",app.projectStats.lines.toLocaleString()]];return <section className="glass-panel rounded-[2rem] p-5"><p className="text-sm font-black text-white">Project Stats</p><div className="mt-4 grid gap-3">{stats.map(([label,value])=><div key={label} className="flex items-center justify-between text-sm"><span className="text-slate-500">{label}</span><span className="font-black text-white">{value}</span></div>)}</div></section>}
 
-<p className="text-xs font-black uppercase tracking-[0.28em] text-emerald-200">
+function QuickActions({app}:{app:ReturnType<typeof useAutoApp>}){return <section className="glass-panel rounded-[2rem] p-5"><p className="text-sm font-black text-white">Quick Actions</p><div className="mt-4 grid gap-2"><Action onClick={()=>app.handleImproveJob(app.activeJobId)} disabled={!app.activeJobId||app.busy}>Relaunch Improve</Action><Action onClick={app.handleStepJob} disabled={!app.activeJobId||app.busy}>Run Single Step</Action><Action onClick={app.handleExportZip} disabled={!app.files.length||app.busy}>Export ZIP</Action><Action danger onClick={()=>app.handleDeleteProject(app.activeJobId)} disabled={!app.activeJobId||app.busy}>Delete Project</Action></div></section>}
 
-AutoApp OS
+function Action({children,onClick,disabled,danger}:{children:React.ReactNode;onClick🙁)=>void;disabled?:boolean;danger?:boolean}){return <button onClick={onClick} disabled={disabled} className={`min-h-12 rounded-2xl border px-4 text-left text-sm font-bold transition disabled:opacity-40 ${danger?"border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20":"border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08]"}`}>{children}</button>}
 
-</p>
+function SystemCard({app}:{app:ReturnType<typeof useAutoApp>}){return <section className="glass-panel rounded-[2rem] p-5"><p className="text-sm font-black text-white">System Status</p><div className="mt-4 grid gap-3"><Status label="API" value={app.diagnostics?.ok?"Operational":"Unknown"}/><Status label="Worker" value={app.busy?"Working":"Ready"}/><Status label="Cron" value="Active"/><Status label="Database" value="Connected"/></div></section>}
 
-<h1 className="mt-3 text-3xl font-black tracking-tight text-white">
+function Status({label,value}:{label:string;value:string}){return <div className="flex items-center justify-between text-sm"><span className="text-slate-500">{label}</span><span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-black text-emerald-300">{value}</span></div>}
 
-Autonomous product workspace
+function TimelinePanel({app}:{app:ReturnType<typeof useAutoApp>}){const logs=app.jobLogs.length?app.jobLogs:["No activity loaded yet. Open a project or run a cycle."];return <section className="glass-panel rounded-[2rem] p-5"><h2 className="text-xl font-black text-white">Monitor</h2><div className="mt-4 grid gap-3">{logs.slice(0,12).map((log,index)=><div key={`${log}-${index}`} className="soft-card rounded-2xl p-4"><p className="text-sm leading-6 text-slate-300">{log}</p></div>)}</div></section>}
 
-</h1>
+function GitHubPanelPremium({app}:{app:ReturnType<typeof useAutoApp>}){return <section className="glass-panel rounded-[2rem] p-5"><h2 className="text-xl font-black text-white">GitHub</h2><p className="mt-1 text-sm text-slate-500">Export real generated files to your repository.</p><div className="mt-5 grid gap-3"><input value={app.githubRepo} onChange={(event)=>app.setGithubRepo(event.target.value)} placeholder="owner/repo" className="input-premium min-h-12 rounded-2xl px-4 text-sm"/><input value={app.githubBranch} onChange={(event)=>app.setGithubBranch(event.target.value)} placeholder="main" className="input-premium min-h-12 rounded-2xl px-4 text-sm"/><button onClick={app.handleExportGitHub} disabled={app.busy||!app.files.length} className="neon-button min-h-12 rounded-2xl px-4 text-sm font-black text-white disabled:opacity-50">Export current files</button><div className="grid grid-cols-2 gap-2"><Action onClick={app.handleGitHubAccessTest} disabled={app.busy}>Test Access</Action><Action onClick={app.handleGitHubWriteTest} disabled={app.busy}>Write Test</Action><Action onClick={app.handleLatestCommit} disabled={app.busy}>Latest Commit</Action><Action onClick={app.handleLoadGitHubHistory} disabled={app.busy}>History</Action></div><GitHubHistoryPanel app={app}/></div></section>}
 
-<p className="mt-3 text-sm leading-6 text-zinc-400">
+function ReleasePanel({app}:{app:ReturnType<typeof useAutoApp>}){return <section className="glass-panel rounded-[2rem] p-5"><h2 className="text-xl font-black text-white">Release</h2><p className="mt-1 text-sm text-slate-500">Validate, export, and prepare real deployment.</p><div className="mt-5 grid gap-3"><Action onClick={()=>app.handleUtility("Build Check")} disabled={app.busy}>Run Build Check</Action><Action onClick={()=>app.handleUtility("Resolve Dependencies")} disabled={app.busy}>Resolve Dependencies</Action><Action onClick={()=>app.handleUtility("Publish Report")} disabled={app.busy}>Create Publish Report</Action><Action onClick={app.handleExportZip} disabled={!app.files.length||app.busy}>Export ZIP</Action></div></section>}
 
-Build, monitor, repair and export autonomous projects from one focused workspace.
-
-</p>
-
-</div>
-
-<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
-
-<p className="text-2xl font-black text-white">
-
-{app.activeJob?.score || app.projectReport?.score?.total || 0}
-
-</p>
-
-<p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">
-
-score
-
-</p>
-
-</div>
-
-</div>
-
-<div className="mt-5 grid grid-cols-3 gap-2">
-
-<MiniStat label="Files" value={String(app.files?.length || 0)} />
-
-<MiniStat label="Jobs" value={String(app.jobs?.length || 0)} />
-
-<MiniStat label="State" value={app.busy ? "busy" : "ready"} />
-
-</div>
-
-</section>
-
-);
-
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-
-return (
-
-<div className="premium-card rounded-2xl px-3 py-3">
-
-<p className="truncate text-sm font-black text-white">{value}</p>
-
-<p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-
-{label}
-
-</p>
-
-</div>
-
-);
-
-}
-
-function PanelFallback({ title }: { title: string }) {
-
-return (
-
-<section className="premium-panel rounded-3xl p-5">
-
-<h2 className="text-lg font-black text-white">{title}</h2>
-
-<div className="mt-4 h-20 animate-pulse rounded-2xl bg-white/5" />
-
-</section>
-
-);
-
-  }
+function MobileBottomNav({tab,setTab}:{tab:WorkspaceTab;setTab🙁tab:WorkspaceTab)=>void}){const items=NAV.slice(0,5);return <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-[#05070c]/95 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-20px_80px_rgba(0,0,0,0.65)] backdrop-blur-xl lg:hidden"><div className="mx-auto grid max-w-lg grid-cols-5 gap-1">{items.map((item)=><button key={item.id} onClick={()=>setTab(item.id)} className={`min-h-14 rounded-2xl text-center transition active:scale-[0.96] ${tab===item.id?"bg-violet-600 text-white shadow-[0_0_30px_rgba(124,92,255,0.45)]":"text-slate-500 hover:bg-white/10"}`}><span className="block text-base leading-none">{item.icon}</span><span className="mt-1 block text-[10px] font-black">{item.label}</span></button>)}</div></nav>}
