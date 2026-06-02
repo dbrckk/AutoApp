@@ -1,85 +1,19 @@
-export type AppTab = "home" | "projects" | "editor" | "github" | "tools";
+export function MobileScreen({
 
-const TABS: {
+active,
 
-id: AppTab;
-
-label: string;
-
-icon: string;
-
-}[] = [
-
-{ id: "home", label: "Home", icon: "●" },
-
-{ id: "projects", label: "Monitor", icon: "◆" },
-
-{ id: "editor", label: "Editor", icon: "▣" },
-
-{ id: "github", label: "GitHub", icon: "◇" },
-
-{ id: "tools", label: "Tools", icon: "▤" },
-
-];
-
-export function MobileTabBar({
-
-activeTab,
-
-onChange,
+children,
 
 }: {
 
-activeTab: AppTab;
+active: boolean;
 
-onChange: (tab: AppTab) => void;
+children: React.ReactNode;
 
 }) {
 
-return (
+if (!active) return null;
 
-<nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-black/90 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden">
-
-<div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
-
-{TABS.map((tab) => {
-
-const active = activeTab === tab.id;
-
-return (
-
-<button
-
-key={tab.id}
-
-onClick={() => onChange(tab.id)}
-
-className={`min-h-14 rounded-2xl text-center transition active:scale-[0.96] ${
-
-active ? "bg-white text-black" : "text-zinc-500 hover:bg-white/10"
-
-}`}
-
->
-
-<span className="block text-base leading-none">{tab.icon}</span>
-
-<span className="mt-1 block text-[10px] font-black">
-
-{tab.label}
-
-</span>
-
-</button>
-
-);
-
-})}
-
-</div>
-
-</nav>
-
-);
+return <section className="mobile-section safe-bottom">{children}</section>;
 
 }
