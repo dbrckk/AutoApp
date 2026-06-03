@@ -600,7 +600,7 @@ return request<{ ok: boolean; repo: string; branch: string; path: string; sha: s
 
 
 export async function getAutonomousJobLogs(jobId: string) {
-  return request<{ ok: boolean; jobId: string; logs: string[]; status: string; phase: string; score: number }>(`/api/jobs/${jobId}/logs`);
+  return request<{ ok: boolean; jobId: string; status: string; phase: string; score: number; logs: string[] }>(`/api/jobs/${jobId}/logs`);
 }
 
 export async function deleteAutonomousJob(jobId: string) {
@@ -610,4 +610,5 @@ export async function deleteAutonomousJob(jobId: string) {
 export async function getGitHubHistory(params: { repo: string; branch?: string }) {
   const search = new URLSearchParams({ repo: params.repo, branch: params.branch || "main" });
   return request<{ ok: boolean; repo: string; branch: string; commits: any[]; error?: string }>(`/api/github/history?${search.toString()}`);
-}
+  }
+  
