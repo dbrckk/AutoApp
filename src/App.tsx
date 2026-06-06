@@ -6,6 +6,7 @@ import { ProjectsPanel } from "./components/ProjectsPanel";
 import { FileExplorer } from "./components/FileExplorer";
 import { GitHubHistoryPanel } from "./components/GitHubHistoryPanel";
 import { JobLogsPanel } from "./components/JobLogsPanel";
+import { PipelinePanel } from "./components/PipelinePanel";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { FileActionModal } from "./components/FileActionModal";
 
@@ -70,9 +71,9 @@ export default function App() {
               {tab === "timeline" ? <TimelinePanel app={app} /> : null}
               {tab === "logs" ? <JobLogsPanel app={app} /> : null}
               {tab === "github" ? <GitHubPanelPremium app={app} /> : null}
-              {tab === "settings" ? <ReleasePanel app={app} /> : null}
+              {tab === "settings" ? <><ReleasePanel app={app} /><PipelinePanel app={app} /></> : null}
             </div>
-            <aside className="space-y-4"><ScoreCard score={activeScore} app={app} /><StatsCard app={app} /><QuickActions app={app} /><SystemCard app={app} /></aside>
+            <aside className="space-y-4"><ScoreCard score={activeScore} app={app} /><StatsCard app={app} /><QuickActions app={app} /><SystemCard app={app} /><PipelinePanel app={app} /></aside>
           </section>
         </section>
       </div>
@@ -96,4 +97,3 @@ function TimelinePanel({ app }: { app: ReturnType<typeof useAutoApp> }) { const 
 function GitHubPanelPremium({ app }: { app: ReturnType<typeof useAutoApp> }) { return (<section className="glass-panel rounded-[2rem] p-5"><h2 className="text-xl font-black text-white">GitHub</h2><p className="mt-1 text-sm text-slate-500">Export real generated files to your repository.</p><div className="mt-5 grid gap-3"><input value={app.githubRepo} onChange={(event) => app.setGithubRepo(event.target.value)} placeholder="owner/repo" className="input-premium min-h-12 rounded-2xl px-4 text-sm" /><input value={app.githubBranch} onChange={(event) => app.setGithubBranch(event.target.value)} placeholder="main" className="input-premium min-h-12 rounded-2xl px-4 text-sm" /><button onClick={app.handleExportGitHub} disabled={app.busy || !app.files.length} className="neon-button min-h-12 rounded-2xl px-4 text-sm font-black text-white disabled:opacity-50">Export current files</button><div className="grid grid-cols-2 gap-2"><Action onClick={app.handleGitHubAccessTest} disabled={app.busy}>Test Access</Action><Action onClick={app.handleGitHubWriteTest} disabled={app.busy}>Write Test</Action><Action onClick={app.handleLatestCommit} disabled={app.busy}>Latest Commit</Action><Action onClick={app.handleLoadGitHubHistory} disabled={app.busy}>History</Action></div><GitHubHistoryPanel app={app} /></div></section>); }
 function ReleasePanel({ app }: { app: ReturnType<typeof useAutoApp> }) { return (<section className="glass-panel rounded-[2rem] p-5"><h2 className="text-xl font-black text-white">Release</h2><p className="mt-1 text-sm text-slate-500">Validate, export, and prepare real deployment.</p><div className="mt-5 grid gap-3"><Action onClick={() => app.handleUtility("Build Check")} disabled={app.busy}>Run Build Check</Action><Action onClick={() => app.handleUtility("Resolve Dependencies")} disabled={app.busy}>Resolve Dependencies</Action><Action onClick={() => app.handleUtility("Publish Report")} disabled={app.busy}>Create Publish Report</Action><Action onClick={app.handleExportZip} disabled={!app.files.length || app.busy}>Export ZIP</Action></div></section>); }
 function MobileBottomNav({ tab, setTab }: { tab: WorkspaceTab; setTab: (tab: WorkspaceTab) => void }) { const items = NAV.slice(0, 5); return (<nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-[#05070c]/95 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-20px_80px_rgba(0,0,0,0.65)] backdrop-blur-xl lg:hidden"><div className="mx-auto grid max-w-lg grid-cols-5 gap-1">{items.map((item) => (<button key={item.id} onClick={() => setTab(item.id)} className={`min-h-14 rounded-2xl text-center transition active:scale-[0.96] ${tab === item.id ? "bg-violet-600 text-white shadow-[0_0_30px_rgba(124,92,255,0.45)]" : "text-slate-500 hover:bg-white/10"}`}><span className="block text-[11px] font-black leading-none">{item.icon}</span><span className="mt-1 block text-[10px] font-black">{item.label}</span></button>))}</div></nav>); }
-                                                                                                                                                                                                                                                            
