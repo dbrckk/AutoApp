@@ -5,10 +5,12 @@ import type { VirtualFile } from "../types";
 import { exportFilesAsZip } from "../lib/exportZip";
 import { deleteSnapshot, listSnapshots, saveSnapshot, type ProjectSnapshot } from "../lib/snapshots";
 import {
+  analyzeCompanyBrain,
   applyTemplate,
   checkApiHealth,
   checkBuild,
   createDeploymentPack,
+  createLiveWorkspaceSnapshot,
   createPublishReport,
   deleteAutonomousJob,
   exportToGitHub,
@@ -65,11 +67,15 @@ type ActivityItem = { id: string; at: number; type: string; title: string; messa
 export function useAutoApp() {
   const [prompt, setPrompt] = useState(SAMPLE_PROMPT);
   const [files, setFiles] = useState([] as VirtualFile[]);
+  const [previousFiles, setPreviousFiles] = useState([] as VirtualFile[]);
   const [selectedPath, setSelectedPath] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [jobs, setJobs] = useState([] as AutonomousJob[]);
   const [jobLogs, setJobLogs] = useState([] as string[]);
   const [projectReport, setProjectReport] = useState(null as any);
+  const [pipelineResult, setPipelineResult] = useState(null as any);
+  const [companyBrainResult, setCompanyBrainResult] = useState(null as any);
+  const [liveWorkspaceResult, setLiveWorkspaceResult] = useState(null as any);
   const [githubHistory, setGithubHistory] = useState([] as any[]);
   const [githubRepo, setGithubRepo] = useState("");
   const [githubBranch, setGithubBranch] = useState("main");
@@ -103,6 +109,15 @@ export function useAutoApp() {
   }, [files, jobs]);
 
   const sessionSnapshotAvailable = false;
+
+  function setProjectFiles(nextFiles: VirtualFile[]) {
+    setPreviousFiles(files);
+    setFiles(nextFiles);
+    setSelectedPath((current) => {
+      if (nextFiles.some((file) => file.path === current)) return current;
+      return nextFiles[0]?.path || "";
+    });
+  }
 
   function pushActivity(type: "success" | "error" | "info", title: string, message?: string) {
     const item = { id: crypto.randomUUID(), at: Date.now(), type, title, message };
@@ -409,6 +424,43 @@ export function useAutoApp() {
     });
   }
 
+
+  async function handleAnalyzeCompanyBrain() {
+    await runAction("Analyzing Company Brain...", async () => {
+      const data = await analyzeCompanyBrain({
+        prompt,
+        files,
+        buildOk: Boolean(projectReport?.build?.ok),
+        previousMemory: companyBrainResult?.brain?.memory || null,
+      });
+
+      setCompanyBrainResult(data);
+
+      return data;
+    });
+  }
+
+  async function handleLiveWorkspaceSnapshot() {
+    if (!files.length) {
+      setStatus("No files loaded for workspace snapshot.");
+      return;
+    }
+
+    await runAction("Creating live workspace snapshot...", async () => {
+      const data = await createLiveWorkspaceSnapshot({
+        prompt,
+        files,
+        previousFiles,
+        selectedPath,
+        buildOk: Boolean(projectReport?.build?.ok),
+      });
+
+      setLiveWorkspaceResult(data);
+
+      return data;
+    });
+  }
+
   async function handleLoadTemplates() { await runAction("Loading templates...", async () => listTemplates()); }
 
   async function handleApplyTemplate(id: string) {
@@ -465,7 +517,7 @@ export function useAutoApp() {
 
   return {
     prompt, setPrompt,
-    files, setFiles,
+    files, setFiles, previousFiles,
     selectedPath, setSelectedPath, selectedFile,
     activeJobId, setActiveJobId, activeJob,
     jobs, jobLogs, githubHistory, projectReport,
@@ -477,7 +529,7 @@ export function useAutoApp() {
     fileActionMode, setFileActionMode, fileActionValue, setFileActionValue,
     handleCancelFileAction, handleConfirmFileAction,
     confirmDeleteFilePath, setConfirmDeleteFilePath, handleCancelDeleteFile, handleConfirmDeleteSelectedFile,
-    busy, status, result, diagnostics, pipelineResult, projectStats, activeTab, setActiveTab,
+    busy, status, result, diagnostics, pipelineResult, companyBrainResult, liveWorkspaceResult, projectStats, activeTab, setActiveTab,
     notifications, dismissNotification, activityEvents, clearActivityEvents,
     sessionSnapshotAvailable, restoreFrontendSnapshot, dismissFrontendSnapshot,
     buildPromptWithGitHubTarget, runAction,
@@ -485,6 +537,7 @@ export function useAutoApp() {
     handleExportGitHub, handleExportZip, handleGitHubAccessTest, handleGitHubWriteTest,
     handleLatestCommit, handleCheckTestFile, handleDiagnostics, handleLiveDiagnostics,
     handlePipelinePlan, handlePipelineQuality, handlePipelineAutofix,
+    handleAnalyzeCompanyBrain, handleLiveWorkspaceSnapshot,
     handleUtility, handleLoadTemplates, handleApplyTemplate,
     handleCreateFile, handleDeleteSelectedFile, handleRenameSelectedFile,
   };
