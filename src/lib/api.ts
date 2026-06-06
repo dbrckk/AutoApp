@@ -610,5 +610,32 @@ export async function deleteAutonomousJob(jobId: string) {
 export async function getGitHubHistory(params: { repo: string; branch?: string }) {
   const search = new URLSearchParams({ repo: params.repo, branch: params.branch || "main" });
   return request<{ ok: boolean; repo: string; branch: string; commits: any[]; error?: string }>(`/api/github/history?${search.toString()}`);
-  }
-  
+}
+
+
+export async function createPipelinePlan(input: {
+  prompt: string;
+  files: VirtualFile[];
+}) {
+  return request<any>("/api/pipeline/plan", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function runPipelineQuality(files: VirtualFile[]) {
+  return request<any>("/api/pipeline/quality", {
+    method: "POST",
+    body: JSON.stringify({ files }),
+  });
+}
+
+export async function runPipelineAutofix(input: {
+  files: VirtualFile[];
+  includeTests?: boolean;
+}) {
+  return request<any>("/api/pipeline/autofix", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+                                         }
