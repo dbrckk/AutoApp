@@ -14,6 +14,12 @@ virtualBuildCheck,
 
 import { scoreProject } from "./scoring";
 
+import {
+createProfessionalGenerationPrompt,
+applyProfessionalPostProcess,
+chooseProfessionalFocus,
+} from "./pipeline";
+
 import { detectTarget } from "./targets";
 
 import { AUTONOMOUS_PHASES, buildPhasePrompt } from "./prompts";
@@ -528,7 +534,9 @@ strategy: job.strategy || "normal",
 
 });
 
-const phasePrompt = buildPhasePrompt({
+const phasePrompt = createProfessionalGenerationPrompt({
+
+prompt: buildPhasePrompt({
 
 phase: job.phase,
 
@@ -543,6 +551,12 @@ build: buildBefore,
 score: scoreBefore,
 
 strategy: job.strategy || "normal",
+
+}),
+
+files,
+
+mode: files.length ? "improve" : "create",
 
 });
 
@@ -591,6 +605,16 @@ nextFiles,
 resolveDependencies(nextFiles).packageJson
 
 );
+
+const professionalPass = applyProfessionalPostProcess({
+
+files: nextFiles,
+
+includeTests: false,
+
+});
+
+nextFiles = professionalPass.files;
 
 let build = virtualBuildCheck(nextFiles);
 
@@ -648,6 +672,8 @@ infinite,
 
 });
 
+const professionalFocus = chooseProfessionalFocus(professionalPass.quality);
+
 const completedPhase = job.phase;
 
 job.phase = getNextPhaseWithStrategy({
@@ -684,7 +710,7 @@ job,
 
 score.total
 
-}/100 · strategy ${job.strategy} · next ${job.phase}`
+}/100 · professional ${professionalPass.quality.total}/100 · focus ${professionalFocus} · strategy ${job.strategy} · next ${job.phase}`
 
 );
 
@@ -1196,4 +1222,5 @@ const match = String(prompt).match(
 
 return match?.[1] || "main";
 
-}
+  }
+  
