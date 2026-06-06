@@ -638,5 +638,31 @@ export async function runPipelineAutofix(input: {
     method: "POST",
     body: JSON.stringify(input),
   });
-  }
+}
+
+
+export async function analyzeCompanyBrain(input: {
+  prompt: string;
+  files: VirtualFile[];
+  buildOk?: boolean;
+  previousMemory?: any;
+}) {
+  return request<any>("/api/brain/analyze", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createLiveWorkspaceSnapshot(input: {
+  prompt: string;
+  files: VirtualFile[];
+  previousFiles?: VirtualFile[];
+  selectedPath?: string;
+  buildOk?: boolean;
+}) {
+  return request<any>("/api/workspace/snapshot", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
   
