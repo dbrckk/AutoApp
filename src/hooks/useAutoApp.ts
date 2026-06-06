@@ -34,6 +34,9 @@ import {
   testGitHubAccess,
   testGitHubExport,
   type AutonomousJob,
+  createPipelinePlan,
+  runPipelineAutofix,
+  runPipelineQuality,
 } from "../lib/api";
 
 const SAMPLE_PROMPT = `Create a premium production-ready mobile-first SaaS dashboard for creators.
@@ -354,6 +357,58 @@ export function useAutoApp() {
     });
   }
 
+
+  async function handlePipelinePlan() {
+    await runAction("Creating professional plan...", async () => {
+      const data = await createPipelinePlan({
+        prompt,
+        files,
+      });
+
+      setPipelineResult(data);
+
+      return data;
+    });
+  }
+
+  async function handlePipelineQuality() {
+    if (!files.length) {
+      setStatus("No files loaded for quality check.");
+      return;
+    }
+
+    await runAction("Running professional quality gate...", async () => {
+      const data = await runPipelineQuality(files);
+
+      setPipelineResult(data);
+
+      return data;
+    });
+  }
+
+  async function handlePipelineAutofix() {
+    if (!files.length) {
+      setStatus("No files loaded for autofix.");
+      return;
+    }
+
+    await runAction("Applying professional autofix...", async () => {
+      const data = await runPipelineAutofix({
+        files,
+        includeTests: false,
+      });
+
+      if (Array.isArray(data.files)) {
+        setFiles(data.files);
+        setSelectedPath(data.files[0]?.path || "");
+      }
+
+      setPipelineResult(data);
+
+      return data;
+    });
+  }
+
   async function handleLoadTemplates() { await runAction("Loading templates...", async () => listTemplates()); }
 
   async function handleApplyTemplate(id: string) {
@@ -422,13 +477,14 @@ export function useAutoApp() {
     fileActionMode, setFileActionMode, fileActionValue, setFileActionValue,
     handleCancelFileAction, handleConfirmFileAction,
     confirmDeleteFilePath, setConfirmDeleteFilePath, handleCancelDeleteFile, handleConfirmDeleteSelectedFile,
-    busy, status, result, diagnostics, projectStats, activeTab, setActiveTab,
+    busy, status, result, diagnostics, pipelineResult, projectStats, activeTab, setActiveTab,
     notifications, dismissNotification, activityEvents, clearActivityEvents,
     sessionSnapshotAvailable, restoreFrontendSnapshot, dismissFrontendSnapshot,
     buildPromptWithGitHubTarget, runAction,
     handleGenerate, handleStartAutonomous, handleStepJob, handleImproveJob, handleResumeJob,
     handleExportGitHub, handleExportZip, handleGitHubAccessTest, handleGitHubWriteTest,
     handleLatestCommit, handleCheckTestFile, handleDiagnostics, handleLiveDiagnostics,
+    handlePipelinePlan, handlePipelineQuality, handlePipelineAutofix,
     handleUtility, handleLoadTemplates, handleApplyTemplate,
     handleCreateFile, handleDeleteSelectedFile, handleRenameSelectedFile,
   };
