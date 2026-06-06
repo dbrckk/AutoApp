@@ -27,6 +27,11 @@ import {
   scoreProject,
 } from "./scoring";
 
+import {
+  applyProfessionalPostProcess,
+  createProfessionalGenerationPrompt,
+} from "./pipeline";
+
 export async function generateProject({
   env,
   prompt,
@@ -55,10 +60,14 @@ export async function generateProject({
     env,
     aiConfig,
     buildExpertPrompt({
-      userPrompt: createGenerationIntent({
-        prompt,
-        isAutoImprove: Boolean(isAutoImprove),
-        buildMode: buildMode || "virtual",
+      userPrompt: createProfessionalGenerationPrompt({
+        prompt: createGenerationIntent({
+          prompt,
+          isAutoImprove: Boolean(isAutoImprove),
+          buildMode: buildMode || "virtual",
+        }),
+        files: currentFiles,
+        mode: originalFiles.length ? "improve" : "create",
       }),
       files: currentFiles,
       build: buildBefore,
@@ -76,10 +85,26 @@ export async function generateProject({
     resolveDependencies(currentFiles).packageJson
   );
 
+  const professionalPass = applyProfessionalPostProcess({
+    files: currentFiles,
+    includeTests: false,
+  });
+
+  currentFiles = professionalPass.files;
+
   let build = virtualBuildCheck(currentFiles);
   let score = scoreProject(currentFiles);
 
   changelog.push(String(output?.changelog || "Generated project files."));
+  changelog.push(
+    "Professional pipeline quality: " +
+      professionalPass.quality.total +
+      "/100."
+  );
+
+  if (professionalPass.changes.length) {
+    changelog.push("Autofix: " + professionalPass.changes.join(" | "));
+  }
 
   if (!build.ok) {
     const repair = await callAiJson(
@@ -102,7 +127,17 @@ export async function generateProject({
       resolveDependencies(currentFiles).packageJson
     );
 
+    const repairProfessionalPass = applyProfessionalPostProcess({
+      files: currentFiles,
+      includeTests: false,
+    });
+
+    currentFiles = repairProfessionalPass.files;
+
     changelog.push(String(repair?.changelog || "Repair pass applied."));
+    changelog.push(
+      "Repair quality: " + repairProfessionalPass.quality.total + "/100."
+    );
 
     build = virtualBuildCheck(currentFiles);
     score = scoreProject(currentFiles);
