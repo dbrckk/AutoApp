@@ -29,4 +29,3 @@ export function ProjectsPanel({ app }: { app: AutoAppState }) {
 }
 function Pill({ children, active }: { children: React.ReactNode; active?: boolean }) { return <span className={`shrink-0 rounded-2xl px-4 py-2 text-xs font-black ${active ? "bg-white text-black" : "border border-white/10 bg-white/[0.04] text-slate-400"}`}>{children}</span>; }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3"><p className="truncate text-sm font-black text-white">{value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-slate-600">{label}</p></div>; }
-  
