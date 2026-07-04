@@ -1,31 +1,53 @@
+import { useMemo, useState } from "react";
 import type { AutoAppState } from "../hooks/useAutoApp";
 
+type Filter = "all" | "running" | "done" | "attention";
+
 export function ProjectsPanel({ app }: { app: AutoAppState }) {
-  const sortedJobs = [...app.jobs].sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
-  const running = sortedJobs.filter((job) => job.status === "running").length;
-  const done = sortedJobs.filter((job) => job.status === "done").length;
+  const [filter, setFilter] = useState<Filter>("all");
+  const sortedJobs = useMemo(() => [...app.jobs].sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0)), [app.jobs]);
+  const counts = {
+    all: sortedJobs.length,
+    running: sortedJobs.filter((job) => job.status === "running").length,
+    done: sortedJobs.filter((job) => job.status === "done").length,
+    attention: sortedJobs.filter((job) => job.status === "paused" || Boolean(job.error)).length,
+  };
+  const visibleJobs = sortedJobs.filter((job) => filter === "all" || (filter === "attention" ? job.status === "paused" || Boolean(job.error) : job.status === filter));
+
   return (
     <section className="glass-panel rounded-[2rem] p-5">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div><h2 className="text-2xl font-black tracking-tight text-white">Projects</h2><p className="mt-1 text-sm text-slate-500">Manage and monitor autonomous builds.</p></div>
         <button onClick={app.handleStartAutonomous} disabled={app.busy} className="neon-button min-h-11 rounded-2xl px-4 text-sm font-black text-white disabled:opacity-50">+ New Project</button>
       </div>
-      <div className="mb-4 flex gap-2 overflow-x-auto"><Pill active>All {sortedJobs.length}</Pill><Pill>Running {running}</Pill><Pill>Done {done}</Pill><button onClick={() => app.refreshJobs()} disabled={app.busy} className="ml-auto shrink-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black text-white disabled:opacity-50">Refresh</button></div>
+
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        <Pill active={filter === "all"} onClick={() => setFilter("all")}>All {counts.all}</Pill>
+        <Pill active={filter === "running"} onClick={() => setFilter("running")}>Running {counts.running}</Pill>
+        <Pill active={filter === "done"} onClick={() => setFilter("done")}>Done {counts.done}</Pill>
+        <Pill active={filter === "attention"} onClick={() => setFilter("attention")}>Attention {counts.attention}</Pill>
+        <button onClick={() => app.refreshJobs()} disabled={app.busy} className="ml-auto shrink-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black text-white disabled:opacity-50">Refresh</button>
+      </div>
+
       <div className="grid gap-3">
-        {sortedJobs.length ? sortedJobs.map((job) => {
+        {visibleJobs.length ? visibleJobs.map((job) => {
           const active = app.activeJobId === job.id;
-          const updatedAt = job.updated_at ? new Date(job.updated_at).toLocaleTimeString() : "unknown";
+          const updatedAt = job.updated_at ? new Date(job.updated_at).toLocaleString() : "unknown";
+          const nextRun = job.next_run_at ? new Date(job.next_run_at).toLocaleString() : "not scheduled";
           return (
             <article key={job.id} className={`soft-card rounded-3xl p-4 transition ${active ? "border-violet-400/70 shadow-[0_0_0_1px_rgba(124,92,255,0.35)]" : ""}`}>
               <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-2xl border border-violet-400/20 bg-violet-500/10 text-xs font-black text-violet-200">AI</span><h3 className="truncate text-base font-black text-white">{job.target || "project"}</h3></div><p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">{job.prompt}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${job.status === "running" ? "bg-emerald-500/10 text-emerald-300" : job.status === "done" ? "bg-blue-500/10 text-blue-300" : "bg-yellow-500/10 text-yellow-300"}`}>{job.status}</span></div>
-              <div className="mt-4 grid grid-cols-3 gap-2"><Metric label="Score" value={`${job.score}/100`} /><Metric label="Phase" value={job.phase || "-"} /><Metric label="Updated" value={updatedAt} /></div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-4"><button onClick={() => app.handleOpenProject(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl bg-white px-3 text-xs font-black text-black disabled:opacity-50">Open</button><button onClick={() => app.handleImproveJob(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl border border-violet-400/25 bg-violet-500/10 px-3 text-xs font-black text-violet-200 disabled:opacity-50">Relaunch</button><button onClick={() => app.refreshJobFiles(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-xs font-black text-white disabled:opacity-50">Files</button><button onClick={() => app.handleDeleteProject(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl border border-red-400/25 bg-red-500/10 px-3 text-xs font-black text-red-200 disabled:opacity-50">Delete</button></div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Score" value={`${job.score}/100`} /><Metric label="Phase" value={job.phase || "-"} /><Metric label="Strategy" value={job.strategy || "normal"} /><Metric label="Attempts" value={`${job.attempts}/${job.max_attempts}`} /></div>
+              <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] leading-5 text-slate-500"><p>Updated: {updatedAt}</p><p>Next run: {nextRun}</p></div>
+              {job.error ? <div className="mt-3 rounded-2xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-200">{job.error}</div> : null}
+              <div className="mt-4 grid gap-2 sm:grid-cols-4"><button onClick={() => app.handleOpenProject(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl bg-white px-3 text-xs font-black text-black disabled:opacity-50">Open</button><button onClick={() => app.handleImproveJob(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl border border-violet-400/25 bg-violet-500/10 px-3 text-xs font-black text-violet-200 disabled:opacity-50">Improve</button><button onClick={() => app.refreshJobFiles(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-xs font-black text-white disabled:opacity-50">Files</button><button onClick={() => app.handleDeleteProject(job.id)} disabled={app.busy} className="min-h-11 rounded-2xl border border-red-400/25 bg-red-500/10 px-3 text-xs font-black text-red-200 disabled:opacity-50">Delete</button></div>
             </article>
           );
-        }) : <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.025] p-8 text-center"><p className="text-lg font-black text-white">No project yet</p><p className="mt-2 text-sm text-slate-500">Start a professional autonomous project to create one.</p><button onClick={app.handleStartAutonomous} disabled={app.busy} className="neon-button mt-5 min-h-12 rounded-2xl px-5 text-sm font-black text-white disabled:opacity-50">Start first project</button></div>}
+        }) : <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.025] p-8 text-center"><p className="text-lg font-black text-white">No matching project</p><p className="mt-2 text-sm text-slate-500">Change the filter or start a new autonomous project.</p></div>}
       </div>
     </section>
   );
 }
-function Pill({ children, active }: { children: React.ReactNode; active?: boolean }) { return <span className={`shrink-0 rounded-2xl px-4 py-2 text-xs font-black ${active ? "bg-white text-black" : "border border-white/10 bg-white/[0.04] text-slate-400"}`}>{children}</span>; }
+
+function Pill({ children, active, onClick }: { children: React.ReactNode; active?: boolean; onClick: () => void }) { return <button onClick={onClick} className={`shrink-0 rounded-2xl px-4 py-2 text-xs font-black ${active ? "bg-white text-black" : "border border-white/10 bg-white/[0.04] text-slate-400"}`}>{children}</button>; }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3"><p className="truncate text-sm font-black text-white">{value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-slate-600">{label}</p></div>; }
