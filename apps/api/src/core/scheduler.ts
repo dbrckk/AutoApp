@@ -2,6 +2,7 @@ import type { Env } from "./types";
 import { runPersistentJobStep } from "./jobs";
 
 const BATCH_SIZE = 3;
+const LEASE_MS = 4 * 60_000;
 
 export async function runEligibleScheduledJobs(env: Env) {
   if (!env.DB) return;
@@ -28,6 +29,26 @@ export async function runEligibleScheduledJobs(env: Env) {
   for (const row of result.results || []) {
     const id = String((row as { id?: string }).id || "");
     if (!id) continue;
+
+    const claim = await env.DB
+      .prepare(
+        `UPDATE jobs
+         SET next_run_at = ?
+         WHERE id = ?
+           AND next_run_at <= ?
+           AND (
+             status = 'running'
+             OR (
+               status = 'done'
+               AND lower(prompt) LIKE '%auto improve forever: true%'
+             )
+           )`
+      )
+      .bind(now + LEASE_MS, id, now)
+      .run();
+
+    if (!claim.meta.changes) continue;
+
     try {
       await runPersistentJobStep(env, id);
     } catch (error) {
