@@ -33,7 +33,7 @@ export async function runEligibleScheduledJobs(env: Env) {
     const claim = await env.DB
       .prepare(
         `UPDATE jobs
-         SET next_run_at = ?
+         SET next_run_at = ?, updated_at = ?
          WHERE id = ?
            AND next_run_at <= ?
            AND (
@@ -44,7 +44,7 @@ export async function runEligibleScheduledJobs(env: Env) {
              )
            )`
       )
-      .bind(now + LEASE_MS, id, now)
+      .bind(now + LEASE_MS, now, id, now)
       .run();
 
     if (!claim.meta.changes) continue;
