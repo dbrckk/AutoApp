@@ -4,8 +4,10 @@ import { ProjectsPanel } from "./components/ProjectsPanel";
 import { FileExplorer } from "./components/FileExplorer";
 import { GitHubHistoryPanel } from "./components/GitHubHistoryPanel";
 import { JobLogsPanel } from "./components/JobLogsPanel";
+import { NotificationCenter } from "./components/NotificationCenter";
 import { PipelinePanel } from "./components/PipelinePanel";
 import { PreflightPanel } from "./components/PreflightPanel";
+import { RuntimeBanner } from "./components/RuntimeBanner";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { FileActionModal } from "./components/FileActionModal";
 
@@ -74,6 +76,8 @@ export default function App() {
           </section>
         </section>
       </div>
+      <RuntimeBanner app={app} />
+      <NotificationCenter app={app} />
       <MobileBottomNav tab={tab} setTab={setTab} />
       <FileActionModal mode={app.fileActionMode} value={app.fileActionValue} onChange={app.setFileActionValue} onCancel={app.handleCancelFileAction} onConfirm={app.handleConfirmFileAction} />
       <ConfirmModal open={Boolean(app.confirmDeleteFilePath)} title="Delete file" message={`Delete ${app.confirmDeleteFilePath}?`} confirmLabel="Delete" danger onCancel={app.handleCancelDeleteFile} onConfirm={app.handleConfirmDeleteSelectedFile} />
