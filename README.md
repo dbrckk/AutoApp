@@ -13,6 +13,8 @@ The current architecture is a React/Vite frontend backed by a Cloudflare Worker,
 - Resume, improve and delete projects.
 - Track phase, strategy, score, attempts, logs and next scheduled execution.
 - Support finite jobs and continuous `auto improve forever` jobs.
+- Schedule only due jobs: paused jobs and completed finite jobs do not consume cron capacity.
+- Claim scheduled work with a short D1 lease before execution to reduce duplicate cron processing.
 
 ### Product quality system
 
@@ -156,11 +158,11 @@ Do not put AI keys or GitHub tokens in the frontend bundle or commit them to the
 
 1. Add authenticated API access before broad public exposure.
 2. Align runtime D1 auto-migration with the full static schema.
-3. Add job leases so cron and manual execution cannot process the same job concurrently.
-4. Exclude completed finite jobs from the scheduler queue.
-5. Add reproducible dependency locking and automated frontend/API CI.
-6. Enable the existing frontend session snapshot recovery path.
-7. Add a real isolated build/preview runner instead of relying only on virtual checks.
+3. Extend execution leases to manual step, resume and improve routes so manual and cron execution cannot overlap.
+4. Add reproducible dependency locking and automated frontend/API CI.
+5. Enable the existing frontend session snapshot recovery path.
+6. Add a real isolated build/preview runner instead of relying only on virtual checks.
+7. Replace synthetic log display times with timestamps parsed from stored job events.
 
 ## Product direction
 
@@ -170,4 +172,4 @@ AutoApp should be judged as an autonomous product operating system, not only as 
 Goal -> Plan -> Build -> Inspect -> Score -> Repair -> Validate -> Publish -> Observe -> Improve
 ```
 
-The repository already contains most of these layers. The remaining work is primarily production hardening: security, concurrency control, schema consistency, reproducible builds and verified deployment execution.
+The repository already contains most of these layers. The remaining work is primarily production hardening: security, manual-execution concurrency control, schema consistency, reproducible builds and verified deployment execution.
