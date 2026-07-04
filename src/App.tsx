@@ -8,8 +8,16 @@ import { NotificationCenter } from "./components/NotificationCenter";
 import { PipelinePanel } from "./components/PipelinePanel";
 import { PreflightPanel } from "./components/PreflightPanel";
 import { RuntimeBanner } from "./components/RuntimeBanner";
+import { SessionRecoveryPanel } from "./components/SessionRecoveryPanel";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { FileActionModal } from "./components/FileActionModal";
+import {
+  clearFrontendSnapshot,
+  isFreshSnapshot,
+  readFrontendSnapshot,
+  saveFrontendSnapshot,
+  type FrontendSessionSnapshot,
+} from "./lib/sessionStore";
 
 type WorkspaceTab = "overview" | "files" | "timeline" | "logs" | "github" | "settings";
 const UI_PREFS_KEY = "autoapp.ui.preferences.v2";
@@ -26,6 +34,7 @@ export default function App() {
   const app = useAutoApp();
   const [tab, setTab] = useState<WorkspaceTab>("overview");
   const [hydrated, setHydrated] = useState(false);
+  const [recoverySnapshot, setRecoverySnapshot] = useState<FrontendSessionSnapshot | null>(null);
   const activeScore = Number(app.activeJob?.score || app.projectReport?.score?.total || 0);
   const health = useMemo(() => app.activeJob?.status || "No active project", [app.activeJob]);
 
@@ -37,14 +46,89 @@ export default function App() {
       if (typeof saved.githubBranch === "string") app.setGithubBranch(saved.githubBranch);
       if (NAV.some((item) => item.id === saved.tab)) setTab(saved.tab);
     } catch {}
+
+    const snapshot = readFrontendSnapshot();
+    if (isFreshSnapshot(snapshot) && (snapshot?.activeJobId || snapshot?.files.length)) {
+      setRecoverySnapshot(snapshot);
+    }
+
     setHydrated(true);
     void app.handleDiagnostics();
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ prompt: app.prompt, githubRepo: app.githubRepo, githubBranch: app.githubBranch, tab }));
+    try {
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ prompt: app.prompt, githubRepo: app.githubRepo, githubBranch: app.githubBranch, tab }));
+    } catch {}
   }, [hydrated, app.prompt, app.githubRepo, app.githubBranch, tab]);
+
+  useEffect(() => {
+    if (!hydrated || recoverySnapshot) return;
+    const timer = window.setTimeout(() => {
+      saveFrontendSnapshot({
+        activeJobId: app.activeJobId,
+        selectedPath: app.selectedPath,
+        files: app.files,
+        projectReport: app.projectReport,
+        jobLogs: app.jobLogs,
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, recoverySnapshot, app.activeJobId, app.selectedPath, app.files, app.projectReport, app.jobLogs]);
+
+  useEffect(() => {
+    const syncVisibility = () => {
+      const visible = document.visibilityState === "visible";
+      app.setAutoRefreshJobs(visible);
+      if (!visible) return;
+
+      app.refreshJobs().catch(() => undefined);
+      if (app.activeJobId) {
+        app.refreshJobFiles(app.activeJobId).catch(() => undefined);
+        app.refreshJobLogs(app.activeJobId).catch(() => undefined);
+        app.refreshProjectReport(app.activeJobId).catch(() => undefined);
+      }
+    };
+
+    document.addEventListener("visibilitychange", syncVisibility);
+    window.addEventListener("online", syncVisibility);
+    syncVisibility();
+    return () => {
+      document.removeEventListener("visibilitychange", syncVisibility);
+      window.removeEventListener("online", syncVisibility);
+    };
+  }, [app.activeJobId]);
+
+  function restoreRecoverySnapshot() {
+    if (!recoverySnapshot) return;
+    app.setActiveJobId(recoverySnapshot.activeJobId);
+    app.setFiles(recoverySnapshot.files);
+    app.setSelectedPath(recoverySnapshot.selectedPath || recoverySnapshot.files[0]?.path || "");
+    clearFrontendSnapshot();
+    setRecoverySnapshot(null);
+
+    if (recoverySnapshot.activeJobId) {
+      void Promise.allSettled([
+        app.refreshJobs(),
+        app.refreshJobFiles(recoverySnapshot.activeJobId),
+        app.refreshJobLogs(recoverySnapshot.activeJobId),
+        app.refreshProjectReport(recoverySnapshot.activeJobId),
+      ]);
+    }
+  }
+
+  function dismissRecoverySnapshot() {
+    clearFrontendSnapshot();
+    setRecoverySnapshot(null);
+  }
+
+  const recoveryApp = {
+    ...app,
+    sessionSnapshotAvailable: Boolean(recoverySnapshot),
+    restoreFrontendSnapshot: restoreRecoverySnapshot,
+    dismissFrontendSnapshot: dismissRecoverySnapshot,
+  };
 
   return (
     <main className="app-bg text-white">
@@ -64,6 +148,7 @@ export default function App() {
 
           <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0 space-y-4">
+              <SessionRecoveryPanel app={recoveryApp} />
               <HeroWorkspace app={app} score={activeScore} health={health} />
               {tab === "overview" ? <><CommandCenter app={app} /><ProjectsPanel app={app} /><ProfessionalPrompt app={app} /><PipelinePanel app={app} /></> : null}
               {tab === "files" ? <FileExplorer app={app} /> : null}
