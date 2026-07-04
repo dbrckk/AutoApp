@@ -165,13 +165,13 @@ The static schema remains in `apps/api/schema.sql`.
 
 ## Security status
 
-Privileged GitHub operations are restricted to repositories owned by `dbrckk`. The Worker still does not enforce full application-level authentication, so the API should not yet be treated as a multi-tenant public service.
+Privileged GitHub operations are restricted to repositories owned by `dbrckk`. Full application-level authentication remains a future hardening step if the API is ever shared with other users or exposed as a multi-tenant service.
 
 Do not put AI keys or GitHub tokens in the frontend bundle or commit them to the repository.
 
 ## Current engineering priorities
 
-1. Add full authenticated API access before broad public exposure.
+1. Add full authenticated API access before any multi-user or multi-tenant use.
 2. Add reproducible dependency locking instead of `latest` dependency ranges.
 3. Add a real isolated build/preview runner instead of relying only on virtual checks.
 4. Add durable server-side event history instead of mixing local activity with job logs.
