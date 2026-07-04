@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import type { Env } from "./core/types";
+import { ensureAppSchema } from "./core/schema";
+import { runEligibleScheduledJobs } from "./core/scheduler";
 
 import { jobsRoutes } from "./routes/jobs";
 import { generateRoutes } from "./routes/generate";
@@ -13,11 +15,7 @@ import { pipelineRoutes } from "./routes/pipeline";
 import { brainRoutes } from "./routes/brain";
 import { workspaceRoutes } from "./routes/workspace";
 
-import { runEligibleScheduledJobs } from "./core/scheduler";
-
-const app = new Hono<{
-  Bindings: Env;
-}>();
+const app = new Hono<{ Bindings: Env }>();
 
 app.use(
   "*",
@@ -30,11 +28,19 @@ app.use(
   })
 );
 
+app.use("/api/*", async (c, next) => {
+  if (c.req.path !== "/api/healthz") {
+    const schema = await ensureAppSchema(c.env);
+    if (!schema.ok) return c.json({ ok: false, error: schema.error || "D1 schema unavailable" }, 503);
+  }
+  await next();
+});
+
 app.get("/api/healthz", (c) => {
   return c.json({
     ok: true,
     service: "AutoApp API",
-    version: "autoapp-professional-pipeline-company-brain-live-workspace",
+    version: "autoapp-autonomous-runtime-v2",
     timestamp: Date.now(),
     routes: {
       jobs: true,
@@ -77,7 +83,8 @@ app.notFound((c) => {
         "GET /api/healthz",
         "POST /api/generate",
         "GET /api/jobs",
-        "POST /api/jobs",
+        "POST /api/jobs/create",
+        "POST /api/jobs/autonomous",
         "GET /api/jobs/:id",
         "POST /api/jobs/:id/step",
         "POST /api/jobs/:id/improve",
@@ -115,11 +122,7 @@ app.onError((error, c) => {
 
 export default {
   fetch: app.fetch,
-  async scheduled(
-    event: ScheduledEvent,
-    env: Env,
-    ctx: ExecutionContext
-  ) {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runEligibleScheduledJobs(env));
   },
 };
