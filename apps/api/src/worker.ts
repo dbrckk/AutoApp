@@ -13,7 +13,7 @@ import { pipelineRoutes } from "./routes/pipeline";
 import { brainRoutes } from "./routes/brain";
 import { workspaceRoutes } from "./routes/workspace";
 
-import { runScheduledJobs } from "./core/jobs";
+import { runEligibleScheduledJobs } from "./core/scheduler";
 
 const app = new Hono<{
   Bindings: Env;
@@ -52,11 +52,7 @@ app.get("/api/healthz", (c) => {
 
 app.get("/api/jobs/:id", async (c, next) => {
   const memoryJob = getMemoryJob(c.req.param("id"));
-
-  if (memoryJob) {
-    return c.json(memoryJob);
-  }
-
+  if (memoryJob) return c.json(memoryJob);
   return next();
 });
 
@@ -105,7 +101,6 @@ app.notFound((c) => {
 
 app.onError((error, c) => {
   console.error("AutoApp worker error:", error);
-
   return c.json(
     {
       ok: false,
@@ -120,13 +115,11 @@ app.onError((error, c) => {
 
 export default {
   fetch: app.fetch,
-
   async scheduled(
     event: ScheduledEvent,
     env: Env,
     ctx: ExecutionContext
   ) {
-    ctx.waitUntil(runScheduledJobs(env));
+    ctx.waitUntil(runEligibleScheduledJobs(env));
   },
 };
-  
