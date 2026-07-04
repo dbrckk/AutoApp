@@ -9,12 +9,13 @@ The current architecture is a React/Vite frontend backed by a Cloudflare Worker,
 ### Autonomous project execution
 
 - Create persistent autonomous jobs from a product prompt.
+- Start new autonomous work without blocking the HTTP request on the first AI cycle.
 - Run a single step manually or continue work through the scheduled Worker trigger.
 - Resume, improve and delete projects.
 - Track phase, strategy, score, attempts, logs and next scheduled execution.
 - Support finite jobs and continuous `auto improve forever` jobs.
 - Schedule only due jobs: paused jobs and completed finite jobs do not consume cron capacity.
-- Claim scheduled work with a short D1 lease before execution to reduce duplicate cron processing.
+- Claim scheduled and manual work with short D1 execution leases to reduce duplicate processing.
 
 ### Product quality system
 
@@ -30,9 +31,11 @@ The current architecture is a React/Vite frontend backed by a Cloudflare Worker,
 - Multi-project dashboard.
 - Functional project filters: All, Running, Done and Attention.
 - File explorer and editor.
-- Job logs and monitoring.
+- Job logs with backend timestamps.
 - Runtime status banner and action notifications.
 - Error boundary for render recovery.
+- Local crash/reload session recovery.
+- Visibility-aware polling that pauses while the page is hidden and refreshes on return.
 - Local persistence for prompt, GitHub target and active workspace tab.
 
 ### Intelligence and integration
@@ -41,8 +44,18 @@ The current architecture is a React/Vite frontend backed by a Cloudflare Worker,
 - Live Workspace snapshots.
 - AI providers: Gemini, Groq and OpenAI-compatible endpoints.
 - GitHub access test, write test, export and history.
+- GitHub repository owner restriction for privileged Worker operations.
 - ZIP export.
 - Cloudflare D1 persistence.
+- Runtime D1 schema alignment for jobs and project memory.
+
+### Validation
+
+GitHub Actions validates:
+
+- frontend TypeScript
+- frontend production build
+- API TypeScript
 
 ## Architecture
 
@@ -140,29 +153,31 @@ Only the keys for providers you actually use are required.
 
 ## D1 schema
 
-The repository contains `apps/api/schema.sql` for:
+Runtime schema checks ensure:
 
 - `jobs`
 - `project_memory`
-- job and memory indexes
+- required columns
+- job scheduling indexes
+- project memory indexes
 
-Apply schema changes deliberately to the configured D1 database before relying on new persistence features.
+The static schema remains in `apps/api/schema.sql`.
 
 ## Security status
 
-The current Worker accepts cross-origin requests and does not yet enforce application-level authentication. A Worker that contains a privileged `GITHUB_TOKEN` must therefore be treated as private infrastructure until API authentication and repository restrictions are added.
+Privileged GitHub operations are restricted to repositories owned by `dbrckk`. The Worker still does not enforce full application-level authentication, so the API should not yet be treated as a multi-tenant public service.
 
 Do not put AI keys or GitHub tokens in the frontend bundle or commit them to the repository.
 
 ## Current engineering priorities
 
-1. Add authenticated API access before broad public exposure.
-2. Align runtime D1 auto-migration with the full static schema.
-3. Extend execution leases to manual step, resume and improve routes so manual and cron execution cannot overlap.
-4. Add reproducible dependency locking and automated frontend/API CI.
-5. Enable the existing frontend session snapshot recovery path.
-6. Add a real isolated build/preview runner instead of relying only on virtual checks.
-7. Replace synthetic log display times with timestamps parsed from stored job events.
+1. Add full authenticated API access before broad public exposure.
+2. Add reproducible dependency locking instead of `latest` dependency ranges.
+3. Add a real isolated build/preview runner instead of relying only on virtual checks.
+4. Add durable server-side event history instead of mixing local activity with job logs.
+5. Add explicit deployment execution and deployment health monitoring.
+6. Add product-level automated tests for the autonomous job lifecycle.
+7. Continue consolidating dormant advanced panels into the mobile-first workspace.
 
 ## Product direction
 
@@ -172,4 +187,4 @@ AutoApp should be judged as an autonomous product operating system, not only as 
 Goal -> Plan -> Build -> Inspect -> Score -> Repair -> Validate -> Publish -> Observe -> Improve
 ```
 
-The repository already contains most of these layers. The remaining work is primarily production hardening: security, manual-execution concurrency control, schema consistency, reproducible builds and verified deployment execution.
+The repository now implements most of this loop. The remaining work is focused on stronger authentication, reproducible installs, real isolated builds, durable observability and deployment automation.
