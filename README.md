@@ -51,7 +51,7 @@ The current architecture is a React/Vite frontend backed by a Cloudflare Worker,
 
 ### Validation
 
-GitHub Actions validates:
+GitHub Actions validates every branch and pull request with:
 
 - frontend TypeScript
 - frontend production build
