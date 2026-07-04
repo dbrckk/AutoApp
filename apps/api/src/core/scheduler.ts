@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { listPersistentJobs, runPersistentJobStep } from "./jobs";
+import { runPersistentJobStep } from "./jobs";
 
 const BATCH_SIZE = 3;
 
@@ -7,24 +7,31 @@ export async function runEligibleScheduledJobs(env: Env) {
   if (!env.DB) return;
 
   const now = Date.now();
-  const jobs = await listPersistentJobs(env.DB);
-  const eligible = jobs
-    .filter((job) => isEligible(job, now))
-    .sort((a, b) => Number(a.next_run_at || 0) - Number(b.next_run_at || 0))
-    .slice(0, BATCH_SIZE);
+  const result = await env.DB
+    .prepare(
+      `SELECT id
+       FROM jobs
+       WHERE next_run_at <= ?
+         AND (
+           status = 'running'
+           OR (
+             status = 'done'
+             AND lower(prompt) LIKE '%auto improve forever: true%'
+           )
+         )
+       ORDER BY next_run_at ASC, updated_at ASC
+       LIMIT ?`
+    )
+    .bind(now, BATCH_SIZE)
+    .all();
 
-  for (const job of eligible) {
+  for (const row of result.results || []) {
+    const id = String((row as { id?: string }).id || "");
+    if (!id) continue;
     try {
-      await runPersistentJobStep(env, job.id);
+      await runPersistentJobStep(env, id);
     } catch (error) {
-      console.error("Scheduled job failed", job.id, error);
+      console.error("Scheduled job failed", id, error);
     }
   }
-}
-
-function isEligible(job: Awaited<ReturnType<typeof listPersistentJobs>>[number], now: number) {
-  if (Number(job.next_run_at || 0) > now) return false;
-  if (job.status === "running") return true;
-  if (job.status === "done" && job.infinite) return true;
-  return false;
 }
