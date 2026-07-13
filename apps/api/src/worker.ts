@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import type { Env } from "./core/types";
+import { ensureAppSchema } from "./core/schema";
+import { runEligibleScheduledJobs } from "./core/scheduler";
 
 import { jobsRoutes } from "./routes/jobs";
 import { generateRoutes } from "./routes/generate";
@@ -13,11 +15,8 @@ import { pipelineRoutes } from "./routes/pipeline";
 import { brainRoutes } from "./routes/brain";
 import { workspaceRoutes } from "./routes/workspace";
 
-import { runScheduledJobs } from "./core/jobs";
-
-const app = new Hono<{
-  Bindings: Env;
-}>();
+const app = new Hono<{ Bindings: Env }>();
+const ALLOWED_GITHUB_OWNER = "dbrckk";
 
 app.use(
   "*",
@@ -30,12 +29,29 @@ app.use(
   })
 );
 
+app.use("/api/*", async (c, next) => {
+  if (c.req.path !== "/api/healthz") {
+    const schema = await ensureAppSchema(c.env);
+    if (!schema.ok) return c.json({ ok: false, error: schema.error || "D1 schema unavailable" }, 503);
+  }
+
+  if (isRepositorySensitivePath(c.req.path)) {
+    const repo = await readRequestedRepo(c);
+    if (repo && !isAllowedRepo(repo)) {
+      return c.json({ ok: false, error: `Repository owner is not allowed: ${repo}` }, 403);
+    }
+  }
+
+  await next();
+});
+
 app.get("/api/healthz", (c) => {
   return c.json({
     ok: true,
     service: "AutoApp API",
-    version: "autoapp-professional-pipeline-company-brain-live-workspace",
+    version: "autoapp-autonomous-runtime-v2",
     timestamp: Date.now(),
+    githubOwnerRestriction: ALLOWED_GITHUB_OWNER,
     routes: {
       jobs: true,
       generate: true,
@@ -52,11 +68,7 @@ app.get("/api/healthz", (c) => {
 
 app.get("/api/jobs/:id", async (c, next) => {
   const memoryJob = getMemoryJob(c.req.param("id"));
-
-  if (memoryJob) {
-    return c.json(memoryJob);
-  }
-
+  if (memoryJob) return c.json(memoryJob);
   return next();
 });
 
@@ -81,7 +93,8 @@ app.notFound((c) => {
         "GET /api/healthz",
         "POST /api/generate",
         "GET /api/jobs",
-        "POST /api/jobs",
+        "POST /api/jobs/create",
+        "POST /api/jobs/autonomous",
         "GET /api/jobs/:id",
         "POST /api/jobs/:id/step",
         "POST /api/jobs/:id/improve",
@@ -105,7 +118,6 @@ app.notFound((c) => {
 
 app.onError((error, c) => {
   console.error("AutoApp worker error:", error);
-
   return c.json(
     {
       ok: false,
@@ -120,13 +132,33 @@ app.onError((error, c) => {
 
 export default {
   fetch: app.fetch,
-
-  async scheduled(
-    event: ScheduledEvent,
-    env: Env,
-    ctx: ExecutionContext
-  ) {
-    ctx.waitUntil(runScheduledJobs(env));
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runEligibleScheduledJobs(env));
   },
 };
-  
+
+function isRepositorySensitivePath(path: string) {
+  return path.startsWith("/api/github/") ||
+    path === "/api/diagnostics/github" ||
+    path === "/api/jobs/create" ||
+    path === "/api/jobs/autonomous";
+}
+
+async function readRequestedRepo(c: any) {
+  const queryRepo = c.req.query("repo");
+  if (queryRepo) return String(queryRepo).trim();
+  if (c.req.method === "GET") return "";
+
+  const body = await c.req.raw.clone().json().catch(() => null);
+  if (typeof body?.repo === "string") return body.repo.trim();
+  if (typeof body?.prompt === "string") {
+    const match = body.prompt.match(/github\s*repo\s*:\s*([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/i);
+    return match?.[1] || "";
+  }
+  return "";
+}
+
+function isAllowedRepo(repo: string) {
+  const owner = String(repo).trim().split("/")[0]?.toLowerCase();
+  return owner === ALLOWED_GITHUB_OWNER.toLowerCase();
+}
